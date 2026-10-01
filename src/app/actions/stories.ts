@@ -10,6 +10,7 @@ import {
   clearFlag as clear,
   declineStory as decline,
   flagStory as flag,
+  recordPrintMeasurements,
   requeueStory as requeue,
   storyIdOr400,
   withdrawStory as withdraw,
@@ -136,6 +137,31 @@ export async function requeueStory(formData: FormData): Promise<void> {
     back(`/story/${done.id}`, { toast: `Re-queued ${done.fromRef} as ${done.ref}` });
   } catch (error) {
     if (error instanceof StoryProblem) back(`/story/${id}`, { toast: error.message });
+    throw error;
+  }
+}
+
+/**
+ * The ledger, as a plain form. Grams and minutes in, the derived cost renders
+ * on the page — computed there, from the current rates, never stored. Blank
+ * fields clear the numbers, so a mistyped weigh-in can be taken back.
+ */
+export async function recordCostAction(formData: FormData): Promise<void> {
+  const team = await requireManager();
+  const id = storyIdOr400(formData.get("storyId"));
+  const asInt = (v: FormDataEntryValue | null): number | null => {
+    if (v == null || String(v).trim() === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.round(n) : NaN;
+  };
+  const raw = { weightGrams: asInt(formData.get("weightGrams")), printMinutes: asInt(formData.get("printMinutes")) };
+  try {
+    const done = await recordPrintMeasurements(team, id, raw);
+    back(formData.get("from"), {
+      toast: `Cost recorded for ${done.ref}.`,
+    });
+  } catch (error) {
+    if (error instanceof StoryProblem) back(formData.get("from"), { error: error.message });
     throw error;
   }
 }

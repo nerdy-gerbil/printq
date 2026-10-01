@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# ppp → PrusaSlicer bridge. Handles a `ppp://slice/<id>` link by fetching the
-# model from a Pretty Please Print instance and opening it in a local slicer.
+# printq → PrusaSlicer bridge. Handles a `printq://slice/<id>` link by fetching the
+# model from a PrintQ - Requests instance and opening it in a local slicer.
 #
 # Runs ON THE PERSON'S OWN MACHINE — the one with the printer, PrusaSlicer, and
 # a browser — not on the server. It is the whole reason "Open in PrusaSlicer"
@@ -11,23 +11,23 @@
 # slicer to download, this downloads the bytes itself and hands the slicer a
 # *local file*, which has no domain to check. See docs/prusaslicer.md.
 #
-# Installed as the handler for the `ppp://` scheme by install-slicer-handler.sh.
+# Installed as the handler for the `printq://` scheme by install-slicer-handler.sh.
 # Invoked by the desktop environment with one argument: the clicked URL.
 #
-# Config lives at $PPP_SLICER_CONF (default ~/.config/ppp/slicer.conf) and sets:
-#   PPP_BASE          the instance, e.g. https://print.example         (required)
-#   PPP_SLICER        the slicer binary            (default: prusa-slicer)
-#   PPP_DOWNLOAD_DIR  where fetched models land    (default: ~/.cache/ppp/models)
-#   PPP_TOKEN         DEPRECATED — see below                          (optional)
+# Config lives at $PRINTQ_SLICER_CONF (default ~/.config/printq/slicer.conf) and sets:
+#   PRINTQ_BASE          the instance, e.g. https://print.example         (required)
+#   PRINTQ_SLICER        the slicer binary            (default: prusa-slicer)
+#   PRINTQ_DOWNLOAD_DIR  where fetched models land    (default: ~/.cache/printq/models)
+#   PRINTQ_TOKEN         DEPRECATED — see below                          (optional)
 #
 # THE CONFIG NO LONGER HOLDS A CREDENTIAL. The clicked link carries its own:
-# `ppp://slice/<id>?t=<token>`, minted by the app for the person who was looking
+# `printq://slice/<id>?t=<token>`, minted by the app for the person who was looking
 # at that ticket, good for half an hour and for that one model. Nothing secret
 # is written to disk, so there is nothing here to leak or to rotate.
 #
-# It used to be PPP_TOKEN, a bearer token pasted in once — which was the session
+# It used to be PRINTQ_TOKEN, a bearer token pasted in once — which was the session
 # token, so when sessions came down from thirty days to twenty idle minutes it
-# stopped working and every click answered HTTP 401. PPP_TOKEN is still honoured
+# stopped working and every click answered HTTP 401. PRINTQ_TOKEN is still honoured
 # when a link carries no `t` (an old bookmark, say), but it is on the way out:
 # delete it from the config and click the button again.
 #
@@ -38,8 +38,8 @@
 
 set -euo pipefail
 
-CONF="${PPP_SLICER_CONF:-$HOME/.config/ppp/slicer.conf}"
-LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/ppp"
+CONF="${PRINTQ_SLICER_CONF:-$HOME/.config/printq/slicer.conf}"
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/printq"
 LOG="$LOG_DIR/slicer.log"
 mkdir -p "$LOG_DIR"
 
@@ -65,7 +65,7 @@ fail() {
 # `t` in the link there is nothing in here anybody could misuse. Warn rather
 # than refuse either way: on a single-user workstation it is a papercut, not a
 # breach, and refusing outright would strand somebody mid-print.
-if grep -q '^[[:space:]]*PPP_TOKEN=' "$CONF" 2>/dev/null && command -v stat >/dev/null 2>&1; then
+if grep -q '^[[:space:]]*PRINTQ_TOKEN=' "$CONF" 2>/dev/null && command -v stat >/dev/null 2>&1; then
   # GNU stat, then BSD/macOS stat. The last two octal digits are the group and
   # other bits; any non-zero there means someone besides the owner can read it.
   perms="$(stat -c '%a' "$CONF" 2>/dev/null || stat -f '%Lp' "$CONF" 2>/dev/null || echo '')"
@@ -77,8 +77,8 @@ fi
 # shellcheck disable=SC1090
 . "$CONF"
 
-: "${PPP_BASE:?PPP_BASE is not set in $CONF}"
-DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
+: "${PRINTQ_BASE:?PRINTQ_BASE is not set in $CONF}"
+DOWNLOAD_DIR="${PRINTQ_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/printq/models}"
 
 # --- locate the slicer ------------------------------------------------------
 # There is no one name for "PrusaSlicer on Linux": a distro package is
@@ -86,13 +86,13 @@ DOWNLOAD_DIR="${PPP_DOWNLOAD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/ppp/models}"
 # Flathub installs it as an app id you reach through `flatpak run`. Defaulting
 # to a single binary name meant the common cases all failed with "not found".
 #
-# PPP_SLICER may therefore be a bare name, a full path to an AppImage, or a
+# PRINTQ_SLICER may therefore be a bare name, a full path to an AppImage, or a
 # multi-word command like "flatpak run com.prusa3d.PrusaSlicer" — it is split
 # on whitespace into a command + args. Left unset, the cases above are probed
 # in turn. (A path containing spaces is the one thing this cannot express; put
 # the AppImage somewhere without them.)
-if [ -n "${PPP_SLICER:-}" ]; then
-  read -r -a SLICER_CMD <<<"$PPP_SLICER"
+if [ -n "${PRINTQ_SLICER:-}" ]; then
+  read -r -a SLICER_CMD <<<"$PRINTQ_SLICER"
 else
   SLICER_CMD=()
   # 1. a binary on PATH, under the names distros and builds actually use.
@@ -118,24 +118,24 @@ else
 fi
 
 [ "${#SLICER_CMD[@]}" -gt 0 ] || fail \
-  "could not find PrusaSlicer. Set PPP_SLICER in $CONF — a binary name, the full path to an AppImage, or 'flatpak run com.prusa3d.PrusaSlicer'."
+  "could not find PrusaSlicer. Set PRINTQ_SLICER in $CONF — a binary name, the full path to an AppImage, or 'flatpak run com.prusa3d.PrusaSlicer'."
 
 # --- parse the link ---------------------------------------------------------
-# Accept ppp://slice/<id>, with or without a trailing slash. The id is the ONLY
+# Accept printq://slice/<id>, with or without a trailing slash. The id is the ONLY
 # thing taken from the URL, and it is validated to digits before it is ever put
 # in a request path — so a hostile link cannot smuggle anything into the fetch.
 url="${1:-}"
-[ -n "$url" ] || fail "no URL given — this is invoked by clicking a ppp:// link"
+[ -n "$url" ] || fail "no URL given — this is invoked by clicking a printq:// link"
 
 # Split `<id>` from an optional `?t=<token>`. The id is still validated to
 # digits before it goes anywhere near a request path, and the token to the
 # base64url alphabet plus the dot that separates its two halves — so neither
 # can smuggle anything into the fetch below.
-rest="${url#ppp://slice/}"
+rest="${url#printq://slice/}"
 id="${rest%%\?*}"
 id="${id%/}"
 case "$id" in
-  "" | *[!0-9]*) fail "not a model link: $url (expected ppp://slice/<number>)" ;;
+  "" | *[!0-9]*) fail "not a model link: $url (expected printq://slice/<number>)" ;;
 esac
 
 link_token=""
@@ -158,7 +158,7 @@ command -v curl >/dev/null 2>&1 || fail "curl is not installed"
 # can execute (an AppImage). Everything after it is arguments to that.
 slicer_head="${SLICER_CMD[0]}"
 command -v "$slicer_head" >/dev/null 2>&1 || [ -x "$slicer_head" ] ||
-  fail "slicer '$slicer_head' is not runnable — fix PPP_SLICER in $CONF (a name on PATH, an AppImage path, or 'flatpak run com.prusa3d.PrusaSlicer')"
+  fail "slicer '$slicer_head' is not runnable — fix PRINTQ_SLICER in $CONF (a name on PATH, an AppImage path, or 'flatpak run com.prusa3d.PrusaSlicer')"
 
 # --- fetch ------------------------------------------------------------------
 tmp="$(mktemp -d)"
@@ -173,21 +173,21 @@ if [ -n "$link_token" ]; then
   # --get --data-urlencode rather than pasting into the URL: curl does the
   # escaping, so the shell never has to be trusted with it.
   fetch_args+=(--get --data-urlencode "t=$link_token")
-elif [ -n "${PPP_TOKEN:-}" ]; then
-  note "no credential in the link — falling back to the deprecated PPP_TOKEN"
-  fetch_args+=(-H "Authorization: Bearer $PPP_TOKEN")
+elif [ -n "${PRINTQ_TOKEN:-}" ]; then
+  note "no credential in the link — falling back to the deprecated PRINTQ_TOKEN"
+  fetch_args+=(-H "Authorization: Bearer $PRINTQ_TOKEN")
 else
-  fail "that link carries no credential and $CONF sets no PPP_TOKEN — open the ticket in the app and click the button there"
+  fail "that link carries no credential and $CONF sets no PRINTQ_TOKEN — open the ticket in the app and click the button there"
 fi
 
-note "fetching story $id from $PPP_BASE"
+note "fetching story $id from $PRINTQ_BASE"
 # No --fail: let curl succeed on any HTTP status and read the code from -w, so
 # the `case` below can answer 401 and 404 in words rather than "curl (22)". A
 # non-zero exit here is a real transport failure — DNS, connection refused —
 # and that is what the `|| fail` catches.
 code="$(
-  curl "${fetch_args[@]}" "$PPP_BASE/api/models/$id" 2>"$tmp/err"
-)" || fail "could not reach $PPP_BASE: $(tr -d '\r' <"$tmp/err" | tail -n1)"
+  curl "${fetch_args[@]}" "$PRINTQ_BASE/api/models/$id" 2>"$tmp/err"
+)" || fail "could not reach $PRINTQ_BASE: $(tr -d '\r' <"$tmp/err" | tail -n1)"
 
 case "$code" in
   200) : ;;
@@ -195,7 +195,7 @@ case "$code" in
     if [ -n "$link_token" ]; then
       fail "that link has expired (HTTP 401). They last half an hour — open the ticket again and click the button."
     else
-      fail "not authorised (HTTP 401) — the PPP_TOKEN in $CONF is expired or was revoked. Delete it and click the button in the app instead; links now carry their own credential."
+      fail "not authorised (HTTP 401) — the PRINTQ_TOKEN in $CONF is expired or was revoked. Delete it and click the button in the app instead; links now carry their own credential."
     fi
     ;;
   404) fail "story $id is not there, or not one this account may see (HTTP 404)" ;;
@@ -222,7 +222,7 @@ mkdir -p "$DOWNLOAD_DIR"
 # before the move so the file we are about to open is never a prune target.
 find "$DOWNLOAD_DIR" -maxdepth 1 -type f -mtime +1 -delete 2>/dev/null || true
 
-out="$DOWNLOAD_DIR/PPP-$((100 + id))-$name"
+out="$DOWNLOAD_DIR/PrintQ-$((100 + id))-$name"
 mv "$body" "$out"
 note "saved $out"
 

@@ -19,8 +19,8 @@
 # STOP THE STACK FIRST. `docker compose ... down`, then run this.
 #
 # Not politeness — it is a corruption risk. This overlay brings its own MinIO,
-# `ppp-minio-migration`, mounting $DATA_ROOT/models. A deployment that has not
-# been upgraded yet is still running `ppp-minio` from the previous release
+# `printq-minio-migration`, mounting $DATA_ROOT/models. A deployment that has not
+# been upgraded yet is still running `printq-minio` from the previous release
 # against that same directory, and the two names do not collide, so Compose will
 # happily start the second one. Two MinIO processes on one data directory is not
 # a supported configuration and the data is the thing you are trying to rescue.
@@ -43,11 +43,11 @@ services:
   # was published under no longer points at these bytes.
   minio:
     image: ghcr.io/danileau/minio@sha256:52dfd5c0bbd38d3219f2058c7af216d9f9a27a994b7b5baad09bbd38866015ff
-    container_name: ppp-minio-migration
+    container_name: printq-minio-migration
     profiles: ["migration"]
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-ppp}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-printq}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
     volumes:
       # Read-write, reluctantly: MinIO writes its own .minio.sys metadata on
@@ -66,21 +66,21 @@ services:
     # A published image, not a build. A deployment holds four files and no
     # source tree — docker-compose.prod.yml consumes images for exactly that
     # reason — so `build: { context: . }` here made this overlay unusable on the
-    # only machine that needs it. Pinned to the same PPP_TAG as the rest of the
+    # only machine that needs it. Pinned to the same PRINTQ_TAG as the rest of the
     # stack, so the migration is the one that shipped with the release you are
     # moving to.
-    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-storage-migrate:${PPP_TAG:-latest}
-    container_name: ppp-storage-migration
+    image: ${PRINTQ_REGISTRY:-ghcr.io/nerdy-gerbil}/printq-storage-migrate:${PRINTQ_TAG:-latest}
+    container_name: printq-storage-migration
     # Deliberately not in the default set: `run` reaches it by name, and no
     # `up` can start it by accident.
     profiles: ["migration"]
     environment:
-      DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+      DATABASE_URL: postgresql://printq:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/printq?schema=public
       # Service names, not localhost: prod publishes no port for MinIO, which
       # is exactly why this runs inside the network rather than on the host.
       S3_ENDPOINT: http://minio:9000
-      S3_BUCKET: ${S3_BUCKET:-ppp-models}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-ppp}
+      S3_BUCKET: ${S3_BUCKET:-printq-models}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-printq}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
       MODELS_ROOT: /uploads
       # Who the files must belong to afterwards: the app's uid, from the

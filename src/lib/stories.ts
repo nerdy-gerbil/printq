@@ -130,6 +130,8 @@ export const STORY_FIELDS = {
   material: true,
   colorName: true,
   colorHex: true,
+  additionalColorNames: true,
+  sourceUrl: true,
   tip: true,
   note: true,
   filename: true,
@@ -623,6 +625,72 @@ export async function requeueStory(actor: Actor, id: number) {
     ref: storyRef(created.id),
     title: src.title,
     fromRef: storyRef(src.id),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The ledger — what a print weighed and how long it ran
+// ---------------------------------------------------------------------------
+
+/**
+ * Record a finished print's measurements, the team-side half of the ledger.
+ *
+ * The numbers are the print team's to enter once the print is real: filament
+ * weighed in grams, wall-clock minutes on the bed. Nothing infers either at
+ * upload time — a number nobody measured is not shown — and the cost itself
+ * is never stored: `deriveCost` computes it at render from the CURRENT rates,
+ * so editing a rate does not silently rewrite history.
+ *
+ * Measured by the team, for the team: `weightGrams`/`printMinutes` and the
+ * cost derived from them never reach the API wire (`storyResource` names its
+ * fields; these are not on the list). They render on the ticket and the queue
+ * pages, which only the team can reach anyway.
+ */
+export async function recordPrintMeasurements(
+  actor: Actor,
+  id: number,
+  raw: { weightGrams: unknown; printMinutes: unknown },
+) {
+  if (!isTeam(actor)) throw problem(403, "Only the print team records cost.");
+  const story = await loadForTeam(actor, id);
+
+  const schema = z.object({
+    weightGrams: z.number().int().min(0).max(100_000).nullable(),
+    printMinutes: z.number().int().min(0).max(60 * 24 * 60).nullable(),
+  });
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw problem(
+      400,
+      "Whole grams and whole minutes, or blank to clear — the ledger takes measured numbers only.",
+    );
+  }
+
+  await db.story.update({
+    where: { id: story.id },
+    data: parsed.data,
+    select: { id: true },
+  });
+
+  await record({
+    action: "story.costed",
+    actor,
+    subject: storyRef(story.id),
+    detail: {
+      title: story.title,
+      weightGrams: parsed.data.weightGrams,
+      printMinutes: parsed.data.printMinutes,
+    },
+  });
+
+  revalidatePath(`/story/${story.id}`);
+  revalidatePath("/queue");
+
+  return {
+    ref: storyRef(story.id),
+    title: story.title,
+    weightGrams: parsed.data.weightGrams,
+    printMinutes: parsed.data.printMinutes,
   };
 }
 

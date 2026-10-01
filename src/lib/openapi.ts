@@ -2,9 +2,9 @@ import "server-only";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { COLORS, MATERIALS, TIPS, WishSchema } from "@/lib/catalog";
+import { COLORS, TIPS, WishSchema } from "@/lib/catalog";
 import { ACCEPTED_EXTENSIONS, MAX_BYTES, formatBytes } from "@/lib/models";
-import { FLOW } from "@/lib/scope";
+import { FLOW, storyRef } from "@/lib/scope";
 import { BodySchema, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, ReasonSchema } from "@/lib/stories";
 import { NOTIFICATION_LIMIT_MAX } from "@/lib/notifications";
 
@@ -79,27 +79,46 @@ const STORY_SCHEMA = {
   description:
     "A print request. `storageKey` — the object's name in the bucket — is " +
     "deliberately absent: the bytes are reachable only through `file.url`, " +
-    "which re-checks who is asking.",
+    "which re-checks who is asking. So are `weightGrams` and `printMinutes` " +
+    "and the cost derived from them — what a print costs the team is the " +
+    "print team's ledger, not the requester's.",
   required: ["id", "ref", "title", "status", "file", "uploader"],
   properties: {
     id: { type: "integer", examples: [4] },
     ref: {
       type: "string",
-      description: "The display reference, `PrintQ-` + (100 + id). What people paste into chat.",
-      examples: ["PrintQ-104"],
+      description: `The display reference, \`PrintQ-\` + (100 + id). What people paste into chat.`,
+      examples: [storyRef(4)],
     },
     title: { type: "string", examples: ["Cable clip"] },
     status: { type: "string", enum: [...FLOW, "Declined"] },
     flagged: { type: "boolean" },
     flagReason: { type: ["string", "null"] },
     quantity: { type: "integer", minimum: 1 },
-    material: { type: "string", enum: [...MATERIALS] },
+    material: {
+      type: "string",
+      description:
+        "Free text, not an enum: the material list is managed in the app " +
+        "(`GET /api/openapi.json` is not where it lives) and the enum here " +
+        "would go stale the moment an admin renamed one.",
+      examples: ["PETG"],
+    },
     color: {
       type: "object",
       properties: {
         name: { type: "string", enum: COLORS.map((c) => c.name) },
         hex: { type: "string", examples: ["#4a5d78"] },
       },
+    },
+    additionalColorNames: {
+      type: "array",
+      description: "Extra colours for a multi-plate multi-colour print, after the primary. At most three.",
+      items: { type: "string" },
+    },
+    sourceUrl: {
+      type: ["string", "null"],
+      description: "Where the model came from — the origin page, when it was downloaded rather than drawn.",
+      examples: ["https://makeronline.com/…"],
     },
     tip: { type: "string", enum: [...TIPS] },
     note: { type: "string" },
@@ -134,7 +153,7 @@ const STORY_SCHEMA = {
         initials: { type: "string", examples: ["AB"] },
       },
     },
-    commentCount: { type: "integer" },
+    commentCount: { type: "integer", description: "How many comments the ticket carries." },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
   },
@@ -257,7 +276,7 @@ export async function buildOpenApiDocument() {
   // Better Auth composes this from `advanced.cookiePrefix`, and prefixes it
   // with `__Secure-` when the cookies are Secure. Naming it correctly is what
   // lets a tool send the right one.
-  const sessionCookie = `${secure ? "__Secure-" : ""}ppp.session_token`;
+  const sessionCookie = `${secure ? "__Secure-" : ""}printq.session_token`;
 
   const authHalf = await authPaths();
 
@@ -265,7 +284,7 @@ export async function buildOpenApiDocument() {
     openapi: "3.1.0",
     info: {
       title: "PrintQ - Requests",
-      version: process.env.PPP_TAG ?? "0.1.0",
+      version: process.env.PRINTQ_TAG ?? "0.1.0",
       description:
         "The HTTP surface of one office's 3D-print queue.\n\n" +
         "**Everything except `/api/health` needs a session.** There is no " +

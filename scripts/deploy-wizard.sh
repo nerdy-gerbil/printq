@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# ppp deploy wizard — the single entry point for deploying Pretty Please Print.
+# printq deploy wizard — the single entry point for deploying PrintQ - Requests.
 #
 # Runs ON THE NAS, in the directory holding docker-compose.prod.yml and
 # .env.docker. That placement is the whole design: the NAS has no source tree,
 # no git and no toolchain — it consumes images CI built, signed and scanned —
 # so the wizard asks the registry what exists rather than asking a checkout.
 #
-# It answers the questions a bare `sed PPP_TAG && docker compose up -d` does
+# It answers the questions a bare `sed PRINTQ_TAG && docker compose up -d` does
 # not:
 #   1. WHICH image?   → lists what is actually published to ghcr.io, newest
 #      first, with publish dates and the live one marked, showing a release
@@ -41,20 +41,20 @@ set -euo pipefail
 # ----- config ---------------------------------------------------------------
 # Overridable from the environment or from ./deploy.conf, so a second
 # deployment does not need the script edited.
-PROJECT_DIR="${PPP_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+PROJECT_DIR="${PRINTQ_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 [ -f "$PROJECT_DIR/deploy.conf" ] && . "$PROJECT_DIR/deploy.conf"
 
 # Derived from APP_URL below, not defaulted to a hostname. It used to default to
 # this project's own deployment, which meant a stranger running the wizard saw
 # somebody else's host reported as "Live health: healthy", gated their post-swap
 # health loop on it, and could have a perfectly good deploy rolled back because
-# an unrelated machine blipped. PPP_HEALTH_URL still overrides.
-HEALTH_URL="${PPP_HEALTH_URL:-}"
-REGISTRY_OWNER="${PPP_REGISTRY_OWNER:-danileau}"
-REPO="${PPP_REPO:-danileau/prettypleaseprint}"
-IMAGES="${PPP_IMAGES:-ppp-app ppp-migrate}"
-WINDOW="${PPP_WINDOW:-15}"
-HEALTH_TIMEOUT="${PPP_HEALTH_TIMEOUT:-300}"
+# an unrelated machine blipped. PRINTQ_HEALTH_URL still overrides.
+HEALTH_URL="${PRINTQ_HEALTH_URL:-}"
+REGISTRY_OWNER="${PRINTQ_REGISTRY_OWNER:-danileau}"
+REPO="${PRINTQ_REPO:-nerdy-gerbil/printq}"
+IMAGES="${PRINTQ_IMAGES:-printq-app printq-migrate}"
+WINDOW="${PRINTQ_WINDOW:-15}"
+HEALTH_TIMEOUT="${PRINTQ_HEALTH_TIMEOUT:-300}"
 
 # ----- pretty ---------------------------------------------------------------
 if [ -t 1 ]; then
@@ -84,15 +84,15 @@ command -v docker  >/dev/null || die "docker required"
 command -v curl    >/dev/null || die "curl required"
 command -v python3 >/dev/null || die "python3 required (for reading the registry's JSON)"
 docker compose version >/dev/null 2>&1 || die "the docker compose plugin is required"
-[ -f "$PROJECT_DIR/.env.docker" ] || die "no .env.docker in $PROJECT_DIR — is PPP_DIR right?"
+[ -f "$PROJECT_DIR/.env.docker" ] || die "no .env.docker in $PROJECT_DIR — is PRINTQ_DIR right?"
 
-CURRENT="$(sed -n 's/^PPP_TAG="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
-[ -n "$CURRENT" ] || die "PPP_TAG not found in .env.docker (see .env.docker.example)"
+CURRENT="$(sed -n 's/^PRINTQ_TAG="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
+[ -n "$CURRENT" ] || die "PRINTQ_TAG not found in .env.docker (see .env.docker.example)"
 
 # The health check follows this deployment, read from the same file as the tag.
 if [ -z "$HEALTH_URL" ]; then
   APP_URL_CFG="$(sed -n 's/^APP_URL="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$PROJECT_DIR/.env.docker" | head -1)"
-  [ -n "$APP_URL_CFG" ] || die "APP_URL not found in .env.docker, and PPP_HEALTH_URL is unset — refusing to guess which host to health-check"
+  [ -n "$APP_URL_CFG" ] || die "APP_URL not found in .env.docker, and PRINTQ_HEALTH_URL is unset — refusing to guess which host to health-check"
   HEALTH_URL="${APP_URL_CFG%/}/api/health"
 fi
 
@@ -125,9 +125,9 @@ for p in projects if isinstance(projects, list) else []:
 ' "$PROJECT_DIR" 2>/dev/null || true
 }
 
-if [ -n "${PPP_COMPOSE_FILES:-}" ]; then
-  COMPOSE_FILES="$PPP_COMPOSE_FILES"
-  COMPOSE_SOURCE="PPP_COMPOSE_FILES"
+if [ -n "${PRINTQ_COMPOSE_FILES:-}" ]; then
+  COMPOSE_FILES="$PRINTQ_COMPOSE_FILES"
+  COMPOSE_SOURCE="PRINTQ_COMPOSE_FILES"
 else
   COMPOSE_FILES="$(discover_compose_files)"
   COMPOSE_SOURCE="the running stack"
@@ -145,14 +145,14 @@ if [ -z "$COMPOSE_FILES" ]; then
     || echo "      (none)" >&2
   echo >&2
   echo "  Bring the stack up once by hand, or write deploy.conf:" >&2
-  echo "      PPP_COMPOSE_FILES=\"-f docker-compose.prod.yml -f docker-compose.proxy.yml\"" >&2
+  echo "      PRINTQ_COMPOSE_FILES=\"-f docker-compose.prod.yml -f docker-compose.proxy.yml\"" >&2
   echo >&2
   echo "  A running stack reports its own file list, if one is up elsewhere:" >&2
-  echo "      docker inspect ppp-app --format '{{index .Config.Labels \"com.docker.compose.project.config_files\"}}'" >&2
+  echo "      docker inspect printq-app --format '{{index .Config.Labels \"com.docker.compose.project.config_files\"}}'" >&2
   exit 1
 fi
 
-echo "${B}ppp deploy wizard${R}  ${DIM}· ${PROJECT_DIR}${R}"
+echo "${B}printq deploy wizard${R}  ${DIM}· ${PROJECT_DIR}${R}"
 hr
 
 # ----- live state -----------------------------------------------------------
@@ -163,7 +163,7 @@ echo "${B}Currently deployed:${R} ${CYN}${CURRENT}${R}"
 echo "${B}Compose files:${R}      ${COMPOSE_FILES}  ${DIM}(from ${COMPOSE_SOURCE})${R}"
 echo "${B}Live health:${R}        ${HSTR}  ${DIM}${HEALTH_URL}${R}"
 printf "${B}Containers:${R}         "
-docker ps --filter 'name=ppp-' --format '{{.Names}} ({{.Status}})' \
+docker ps --filter 'name=printq-' --format '{{.Names}} ({{.Status}})' \
   | sed 's/ (Up[^)]*(healthy))/ ok/' | paste -sd, - | sed 's/,/, /g' || true
 hr
 
@@ -181,7 +181,7 @@ hr
 # With a token it lists every published image, SHA builds included, which is
 # what you want when following main closely.
 read_token() {
-  if [ -n "${PPP_TOKEN:-}" ]; then TOKEN="$PPP_TOKEN"; return; fi
+  if [ -n "${PRINTQ_TOKEN:-}" ]; then TOKEN="$PRINTQ_TOKEN"; return; fi
   printf 'ghcr.io token for the full image list, or press enter for releases only: '
   stty -echo 2>/dev/null || true
   read -r TOKEN
@@ -198,7 +198,7 @@ if [ -n "$TOKEN" ]; then
   VERSIONS="$(curl -sSL --max-time 20 \
     -H "Authorization: Bearer $TOKEN" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/user/packages/container/ppp-app/versions?per_page=100" 2>/dev/null || true)"
+    "https://api.github.com/user/packages/container/printq-app/versions?per_page=100" 2>/dev/null || true)"
 else
   echo "${DIM}→ asking GitHub what has been released…${R}"
   SOURCE_LABEL="releases only (no token given)"
@@ -366,10 +366,10 @@ if [ -n "$COSIGN" ]; then
   # cosign was actually installed somewhere, because without it the wizard
   # skips the check and says so.
   #
-  # The REPO NAME: keyless signing embeds the repository path, so images built
-  # before the rename carry the old one. Both are admitted; a fork, another
-  # workflow, another branch and a non-version tag are not.
-  IDENTITY="^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$"
+  # The REPO NAME: keyless signing embeds the repository path, so only images
+  # this repo's release workflow built are admitted. A fork, another workflow,
+  # another branch and a non-version tag are not.
+  IDENTITY="^https://github\.com/nerdy-gerbil/printq/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$"
   for img in $IMAGES; do
     if "$COSIGN" verify \
         --certificate-identity-regexp "$IDENTITY" \
@@ -410,16 +410,16 @@ if [ -n "$TOKEN" ]; then
 fi
 
 echo "${DIM}→ pulling ${TARGET}…${R}"
-( cd "$PROJECT_DIR" && sed -i "s|^PPP_TAG=.*|PPP_TAG=\"$TARGET\"|" .env.docker )
+( cd "$PROJECT_DIR" && sed -i "s|^PRINTQ_TAG=.*|PRINTQ_TAG=\"$TARGET\"|" .env.docker )
 if ! compose pull; then
-  ( cd "$PROJECT_DIR" && sed -i "s|^PPP_TAG=.*|PPP_TAG=\"$CURRENT\"|" .env.docker )
+  ( cd "$PROJECT_DIR" && sed -i "s|^PRINTQ_TAG=.*|PRINTQ_TAG=\"$CURRENT\"|" .env.docker )
   die "pull failed — .env.docker restored to ${CURRENT}, nothing was restarted"
 fi
 
 echo "${DIM}→ starting…${R}"
 if ! compose up -d; then
   echo "${RED}✗ docker compose up failed — rolling the tag back to ${CURRENT}.${R}" >&2
-  ( cd "$PROJECT_DIR" && sed -i "s|^PPP_TAG=.*|PPP_TAG=\"$CURRENT\"|" .env.docker )
+  ( cd "$PROJECT_DIR" && sed -i "s|^PRINTQ_TAG=.*|PRINTQ_TAG=\"$CURRENT\"|" .env.docker )
   compose up -d || true
   die "the stack was not swapped; .env.docker is back on ${CURRENT}"
 fi
@@ -441,7 +441,7 @@ if [ "$ok" -ge 2 ]; then
 fi
 
 echo "${RED}✗ health did not stabilise — rolling back to ${CURRENT}.${R}" >&2
-( cd "$PROJECT_DIR" && sed -i "s|^PPP_TAG=.*|PPP_TAG=\"$CURRENT\"|" .env.docker )
+( cd "$PROJECT_DIR" && sed -i "s|^PRINTQ_TAG=.*|PRINTQ_TAG=\"$CURRENT\"|" .env.docker )
 compose up -d
 sleep 10
 code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$HEALTH_URL" || true)"

@@ -233,7 +233,7 @@ model AuditEvent {
   /// Kept even if the account is later removed.
   actorEmail String?
 
-  /// What was acted on, in human terms: "PPP-104", "ayla@office.example".
+  /// What was acted on, in human terms: "PrintQ-104", "ayla@office.example".
   subject String?
 
   ip        String?

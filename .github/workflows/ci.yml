@@ -164,8 +164,8 @@ jobs:
       # rather than on the next daily image scan.
       - name: Runtime images ship no npm
         run: |
-          for img in ppp-app ppp-migrate; do
-            if docker run --rm --entrypoint sh "ghcr.io/danileau/$img:latest"                  -c 'command -v npm' >/dev/null 2>&1; then
+          for img in printq-app printq-migrate; do
+            if docker run --rm --entrypoint sh "ghcr.io/nerdy-gerbil/$img:latest"                  -c 'command -v npm' >/dev/null 2>&1; then
               echo "::error file=Dockerfile::npm is back in $img — it re-adds the vulnerable bundled sigstore"
               exit 1
             fi
@@ -176,7 +176,7 @@ jobs:
       # the half a presence check cannot tell you.
       - name: Migrator still runs without npm
         run: |
-          docker run --rm --entrypoint sh ghcr.io/danileau/ppp-migrate:latest             -c './node_modules/.bin/prisma --version >/dev/null && ./node_modules/.bin/tsx --version >/dev/null'             && echo "prisma and tsx resolve via node_modules/.bin"
+          docker run --rm --entrypoint sh ghcr.io/nerdy-gerbil/printq-migrate:latest             -c './node_modules/.bin/prisma --version >/dev/null && ./node_modules/.bin/tsx --version >/dev/null'             && echo "prisma and tsx resolve via node_modules/.bin"
 
       - name: Container logs on failure
         if: failure()

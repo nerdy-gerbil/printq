@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Pretty Please Print
+# PrintQ - Requests
 #
 # Three images out of one file:
 #   builder   — full toolchain, produces the Next standalone bundle
@@ -65,7 +65,7 @@ COPY package.json /tmp/package.json
 RUN node -e "\
       const p = require('/tmp/package.json'); \
       require('fs').writeFileSync('package.json', JSON.stringify({ \
-        name: 'ppp-migrate', private: true, \
+        name: 'printq-migrate', private: true, \
         dependencies: { \
           prisma: p.devDependencies.prisma, \
           '@prisma/client': p.dependencies['@prisma/client'], \
@@ -134,7 +134,7 @@ COPY package.json /tmp/package.json
 RUN node -e "\
       const p = require('/tmp/package.json'); \
       require('fs').writeFileSync('package.json', JSON.stringify({ \
-        name: 'ppp-storage-migrate', private: true, type: 'module', \
+        name: 'printq-storage-migrate', private: true, type: 'module', \
         dependencies: { \
           prisma: p.devDependencies.prisma, \
           '@prisma/client': p.dependencies['@prisma/client'], \

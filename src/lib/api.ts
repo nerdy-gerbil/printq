@@ -177,6 +177,8 @@ export function storyResource(story: StoryRow) {
     quantity: story.quantity,
     material: story.material,
     color: { name: story.colorName, hex: story.colorHex },
+    additionalColorNames: story.additionalColorNames,
+    sourceUrl: story.sourceUrl,
     tip: story.tip,
     note: story.note,
     file: {

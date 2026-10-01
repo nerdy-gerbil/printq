@@ -5,7 +5,7 @@
 # tested. Deploying stays a human action — nothing here reaches into TrueNAS.
 #
 # Tags per image: the 7-char commit SHA always, plus a moving `latest` on a
-# push to main, or the version on a `v*` tag. Pin PPP_TAG to a SHA or a
+# push to main, or the version on a `v*` tag. Pin PRINTQ_TAG to a SHA or a
 # version on the NAS — either is also how you roll back.
 #
 # A release deliberately does not move `latest`: the tag is cut from a commit
@@ -19,7 +19,7 @@
 #
 # One-time setup on the NAS:
 #   docker login ghcr.io -u <you> -p <PAT with read:packages>
-#   .env.docker:  PPP_REGISTRY=ghcr.io/<you>   PPP_TAG=<sha>
+#   .env.docker:  PRINTQ_REGISTRY=ghcr.io/<you>   PRINTQ_TAG=<sha>
 #
 # workflow_dispatch exists because base-layer CVEs land with no commit to
 # trigger on: same main, fresh `apk upgrade`, republished.
@@ -29,7 +29,7 @@ on:
   push:
     branches: [main]
     # A version tag republishes the same commit under a name a human can say
-    # out loud, so PPP_TAG can read v0.1.0 instead of a 7-char SHA.
+    # out loud, so PRINTQ_TAG can read v0.1.0 instead of a 7-char SHA.
     tags: ["v*"]
     # The daily traffic snapshot writes only here, and republishing images for
     # a row of numbers helps nobody.
@@ -53,14 +53,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ppp-app
+          - name: printq-app
             target: runner
-          - name: ppp-migrate
+          - name: printq-migrate
             target: migrator
           # The one-shot storage migration. Published rather than built on the
           # host because a deployment has no source tree — see the stage's
           # comment in the Dockerfile. Goes when the migration tooling goes.
-          - name: ppp-storage-migrate
+          - name: printq-storage-migrate
             target: storage-migrator
     steps:
       - uses: actions/checkout@v7

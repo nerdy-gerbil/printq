@@ -1,16 +1,16 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: ppp-db
+    container_name: printq-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ppp
+      POSTGRES_USER: printq
       POSTGRES_PASSWORD: dev-only-not-a-secret
-      POSTGRES_DB: ppp
+      POSTGRES_DB: printq
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ppp -d ppp"]
+      test: ["CMD-SHELL", "pg_isready -U printq -d printq"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -26,7 +26,7 @@ services:
   # Catches every outbound email in dev. Web UI on http://localhost:8025
   mailpit:
     image: axllent/mailpit:latest
-    container_name: ppp-mailpit
+    container_name: printq-mailpit
     restart: unless-stopped
     ports: ["8025:8025", "1025:1025"]
 

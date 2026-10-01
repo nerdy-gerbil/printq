@@ -1,11 +1,12 @@
 /**
- * The fixed choices a request can be made from, exactly as the handoff lists
- * them. The form renders from these and the server validates against them, so
- * the two cannot drift apart.
+ * The choices a request can be made from. Colours and quantities are fixed
+ * exactly as the handoff lists them; materials were a fixed enum and are now
+ * owner-managed data (see src/lib/materials.ts) — this module only carries
+ * the default and the shape, and the upload route validates against the
+ * *active* list.
  */
 import { z } from "zod";
 
-export const MATERIALS = ["PLA", "PETG", "TPU", "Resin"] as const;
 export const DEFAULT_MATERIAL = "PETG";
 
 /** Filament swatches. Light ones need the inset ring to stay visible. */
@@ -57,6 +58,9 @@ export const QuantitySchema = z.coerce
   // is shared with the client bundle). The upload form says who to ask.
   .max(24, "More than 24 is a production run — ask the printer owner first.");
 
+/** Up to three extra colours beyond the primary (4 total). */
+export const MAX_ADDITIONAL_COLORS = 3;
+
 export const WishSchema = z.object({
   title: z
     .string()
@@ -64,7 +68,9 @@ export const WishSchema = z.object({
     .max(120, "Keep the title under 120 characters.")
     .optional()
     .default(""),
-  material: z.enum(MATERIALS),
+  // Owner-managed: shape only here, the active list is checked server-side
+  // against the Material table (this module is shared with the client bundle).
+  material: z.string().trim().min(1, "Pick a material.").max(40, "That material is oddly long."),
   colorName: z.enum(colorNames),
   quantity: QuantitySchema,
   // The tip is no longer a compile-time enum — it is an owner-managed list.
@@ -79,6 +85,23 @@ export const WishSchema = z.object({
     .string()
     .trim()
     .max(2000, "Those print settings are very long.")
+    .optional()
+    .default(""),
+  // Multi-colour: up to three additional colours, deduped and disjoint from
+  // the primary. Names only — the swatch hexes come from COLORS at render.
+  additionalColorNames: z
+    .array(z.enum(colorNames))
+    .max(MAX_ADDITIONAL_COLORS, "Up to three extra colours — four in total.")
+    .optional()
+    .default([]),
+  // Where the model came from, if not made by the requester. Reference only:
+  // nothing is fetched from it at upload time. https enforced and length
+  // capped, because it is rendered as a link.
+  sourceUrl: z
+    .string()
+    .trim()
+    .max(500, "That link is very long.")
+    .refine((v) => v === "" || /^https:\/\//i.test(v), "Source links start with https://")
     .optional()
     .default(""),
 });

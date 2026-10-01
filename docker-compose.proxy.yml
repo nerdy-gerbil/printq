@@ -27,8 +27,8 @@
 #     docker network create npm-proxy
 #     docker network connect npm-proxy <your-proxy-container>
 #
-# Then point the proxy at `ppp-app` on port 3000 — the container name, not an
-# IP. If your proxy's network is called something else, set PPP_PROXY_NETWORK.
+# Then point the proxy at `printq-app` on port 3000 — the container name, not an
+# IP. If your proxy's network is called something else, set PRINTQ_PROXY_NETWORK.
 #
 # Note that a managed proxy (a TrueNAS app, say) loses this attachment every
 # time it is updated and recreated, which surfaces as a 502 with nothing wrong
@@ -43,4 +43,4 @@ services:
 networks:
   proxy:
     external: true
-    name: ${PPP_PROXY_NETWORK:-npm-proxy}
+    name: ${PRINTQ_PROXY_NETWORK:-npm-proxy}

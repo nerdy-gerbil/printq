@@ -72,7 +72,7 @@ no header that names a user.
 | `GET` | `/api/openapi.json` | This surface, machine-readable. |
 | | `/api/auth/*` | Every Better Auth endpoint — sign-in, passkeys, admin, reset. |
 
-`{id}` is the numeric id — `4`, not `PPP-104`. The display ref comes back on
+`{id}` is the numeric id — `4`, not `PrintQ-104`. The display ref comes back on
 every ticket as `ref`.
 
 ## Five things that will otherwise surprise you
@@ -118,12 +118,28 @@ curl -s https://print.example/api/upload \
   -F quantity=2 -F tip='A beer' -F note='Teal if you have it'
 ```
 
+A request may also carry `additionalColorNames` — repeat the field, up to
+three values after the primary colour, for a multi-plate multi-colour print —
+and `sourceUrl`, an `https://` link to the model's origin page. The material
+is a free-text string validated against the live catalogue: it must name a
+material the admin has put on offer, and an unknown one is refused with the
+list to pick from.
+
+## Two fields the API deliberately keeps to itself
+
+`weightGrams` and `printMinutes` — the numbers the print team records on a
+finished ticket for the cost ledger — are **not on the wire**, and neither is
+the cost derived from them. The ledger is the team's business: it renders on
+the ticket and queue pages, which only the team can reach, and it stays out of
+the JSON surface the same way `storageKey` does — `storyResource` names its
+fields, and these are not on the list.
+
 ## Errors
 
 One shape, everywhere, and the message is written for a person:
 
 ```json
-{ "error": "PPP-104 is already printing — ask Ruben instead." }
+{ "error": "PrintQ-104 is already printing — ask Ruben instead." }
 ```
 
 | | |

@@ -41,12 +41,23 @@ export type AuditAction =
   | "story.requeued"
   | "story.flagged"
   | "story.flag_cleared"
+  | "story.costed"
   | "comment.added"
   | "file.downloaded"
   | "file.refused"
   // benefits (the owner-managed tip catalogue)
   | "benefit.created"
   | "benefit.updated"
+  // materials (the owner-managed material catalogue and its rates)
+  | "material.created"
+  | "material.updated"
+  | "material.retired"
+  | "material.restored"
+  | "material.rate_changed"
+  | "machine.rate_changed"
+  // wishlist
+  | "wishlist.added"
+  | "wishlist.removed"
   // feature requests (the 'frr' track)
   | "feature.created"
   | "feature.status_changed"

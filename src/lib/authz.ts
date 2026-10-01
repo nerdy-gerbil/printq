@@ -6,6 +6,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isTeam, storyScope, type Actor } from "@/lib/scope";
+import { postWebhook } from "@/lib/webhook";
 
 // The pure rules live in `scope.ts` so they can be imported without pulling in
 // `server-only`. Re-exported here so callers have one import to reach for.
@@ -165,6 +166,10 @@ export async function notify(opts: {
   featureId?: number;
   text: string;
 }): Promise<void> {
+  // The optional outbound mirror fires from the notification choke point, so
+  // it sees exactly what the in-app feed sees — no second list of events to
+  // keep in step. Best-effort, never awaited errors.
+  postWebhook(opts.text);
   await db.notification.create({
     data: {
       recipientId: opts.recipientId,

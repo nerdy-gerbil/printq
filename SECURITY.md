@@ -4,10 +4,10 @@
 
 Please report security issues **privately**, not as a public issue.
 
-- **Preferred:** [open a private advisory](https://github.com/danileau/prettypleaseprint/security/advisories/new)
+- **Preferred:** [open a private advisory](https://github.com/nerdy-gerbil/printq/security/advisories/new)
   on this repository. It is visible only to the maintainers until a fix ships.
-- **Otherwise:** email <danilo.licitra@gmail.com> with `[ppp security]` in the
-  subject.
+- **Otherwise:** raise it with the maintainer through the repository's contact
+  route with `[printq security]` in the subject.
 
 Please include what you need to make the problem reproducible: the version or
 commit, the request or steps, and what you expected to happen instead. A proof
@@ -34,7 +34,7 @@ There is no bug bounty; there is gratitude and an acknowledgement.
 ## Supported versions
 
 The `main` branch is the only supported version. Deployments pin a commit SHA
-(`PPP_TAG`), so "upgrade" means moving that pin forward — see
+(`PRINTQ_TAG`), so "upgrade" means moving that pin forward — see
 [docs/deployment.md](docs/deployment.md).
 
 ## Scope

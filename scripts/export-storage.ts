@@ -62,7 +62,7 @@ import { DIR_MODE, FILE_MODE } from "../src/lib/storage-layout";
  * actually lives.
  */
 const ROOT = resolve(process.env.MODELS_ROOT ?? "/uploads");
-const BUCKET = process.env.S3_BUCKET ?? "ppp-models";
+const BUCKET = process.env.S3_BUCKET ?? "printq-models";
 
 /*
  * The app serves as uid 1001 (`USER nextjs` in the Dockerfile), and this runs
@@ -88,7 +88,7 @@ const s3 = new S3Client({
   region: process.env.S3_REGION ?? "us-east-1",
   forcePathStyle: true,
   credentials: {
-    accessKeyId: process.env.S3_ACCESS_KEY ?? "ppp",
+    accessKeyId: process.env.S3_ACCESS_KEY ?? "printq",
     secretAccessKey: process.env.S3_SECRET_KEY ?? "dev-only-not-a-secret",
   },
 });

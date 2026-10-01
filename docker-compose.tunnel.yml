@@ -35,9 +35,9 @@
 # not in a config file here. Zero Trust → Networks → Tunnels → your tunnel →
 # Public Hostnames, one entry:
 #
-#     ppp.example.org  →  HTTP  →  ppp-app:3000
+#     printq.example.org  →  HTTP  →  printq-app:3000
 #
-# `ppp-app` is the container name on this compose network — not an IP, and not
+# `printq-app` is the container name on this compose network — not an IP, and not
 # localhost, which inside the connector's own container is the connector. Add
 # the hostname there and Cloudflare writes the proxied CNAME for you; the old
 # A record should then be deleted rather than left behind as a second answer.
@@ -60,7 +60,7 @@
 services:
   cloudflared:
     image: cloudflare/cloudflared:${CF_TUNNEL_TAG:-latest}
-    container_name: ppp-cloudflared
+    container_name: printq-cloudflared
     restart: unless-stopped
     # --no-autoupdate because the binary replacing itself inside a container is
     # a change nothing here recorded and a restart would undo. Update the way
@@ -68,7 +68,7 @@ services:
     command: tunnel --no-autoupdate run
     # Passed as an environment variable, which is how every other secret in
     # this stack reaches its container — and which does mean it is readable in
-    # `docker inspect ppp-cloudflared`. If that is not a trade you want on a
+    # `docker inspect printq-cloudflared`. If that is not a trade you want on a
     # shared host, cloudflared also reads TUNNEL_TOKEN_FILE: point it at a
     # mounted file and drop this line. Rotating in the dashboard invalidates
     # the old value either way, which is the recovery worth knowing.
@@ -83,6 +83,6 @@ services:
         condition: service_healthy
     # No healthcheck: the published image is distroless and has neither a shell
     # nor curl, so the usual in-container probe cannot run. `docker logs
-    # ppp-cloudflared` and the tunnel's own health in the Zero Trust dashboard
+    # printq-cloudflared` and the tunnel's own health in the Zero Trust dashboard
     # are the checks — the dashboard is authoritative anyway, since it knows
     # whether the edge can see this connector, which nothing on the host can.

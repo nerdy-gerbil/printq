@@ -1,0 +1,91 @@
+# PrintQ - Requests — PaaS-style template (Dokploy, Coolify, a plain host).
+#
+# For hosts that build from a repository rather than pull published images.
+# It differs from docker-compose.prod.yml in three ways:
+#
+#   1. it BUILDS the app and migrator images from this source tree, so no
+#      registry credential and no release tag are needed;
+#   2. it publishes the app on :3000, because the platform's edge is the
+#      reverse proxy — bring your own TLS at the platform level;
+#   3. it carries no proxy or tunnel overlays: the platform is the edge.
+#
+# Everything is driven by the standard variables (see .env.docker.example) and
+# by APP_URL; there is no hardcoded domain. Set in the platform's environment:
+#
+#   APP_URL             https://printq.your-domain.example   (required)
+#   PASSKEY_RP_ID       your registrable domain              (required, permanent)
+#   BETTER_AUTH_SECRET  openssl rand -base64 32              (required)
+#   DB_PASSWORD         openssl rand -hex 24                 (required)
+#   DATA_ROOT           a platform volume, e.g. /var/lib/dokploy/volumes/printq
+#   TRUST_PROXY_HEADERS true   if the platform edge terminates TLS in front of this
+#
+# Migrations run as a one-shot service the app waits on via
+# service_completed_successfully, so the first thing that ever serves traffic
+# is an already-migrated app.
+#
+# First run: after the stack is up, open /setup once in a browser to claim the
+# printer. There is no admin variable and no bootstrap link.
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  migrate:
+    build:
+      context: .
+      target: migrator
+    container_name: printq-migrate
+    env_file: [.env.docker]
+    environment:
+      DATABASE_URL: postgresql://printq:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/printq?schema=public
+      BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
+    volumes:
+      - ${DATA_ROOT:-./data}/uploads:/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    container_name: printq-app
+    <<: *restart
+    env_file: [.env.docker]
+    environment:
+      DATABASE_URL: postgresql://printq:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/printq?schema=public
+      MODELS_ROOT: /uploads
+      BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ${DATA_ROOT:-./data}/uploads:/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  db:
+    image: postgres:17-alpine
+    container_name: printq-db
+    <<: *restart
+    environment:
+      POSTGRES_USER: printq
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      POSTGRES_DB: printq
+    volumes:
+      - ${DATA_ROOT:-./data}/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U printq -d printq"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

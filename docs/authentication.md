@@ -99,24 +99,25 @@ puts the row back — with its original expiry — when the failure happened aft
 consumption. The link is spent when a password is actually set, which is what
 "single use" was ever meant to mean.
 
-### Bootstrapping the admin
+### Claiming the printer: the first-run /setup page
 
-The printer owner is the one account nobody invites, so `prisma/seed.ts` writes
-the row directly. A row cannot sign in on its own, so when the admin has no
-password the seed mints a set-password link and **prints it**:
+The admin is the one account nobody invites, and the one no env file creates.
+On a fresh database, `/setup` is served once: it asks for the shop's name, an
+email, a username and a password, creates the first admin, and then **stops
+existing** — a page that could mint administrators is a page worth finding, so
+it is only routable while the database has no admin at all.
 
-```bash
-docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
-```
+The password rules are the same ones an invitation sets (ten characters,
+breach-checked), and the whole event is audited as `admin.bootstrapped`. There
+is deliberately no `ADMIN_EMAIL`/`ADMIN_NAME` pair and no bootstrap link: a
+password in an env file is also in `docker inspect`, in the shell history that
+wrote the file and in every backup of the host, still valid months later. A
+page that exists only until it is used, over a session that is yours alone, is
+a smaller thing to leak.
 
-Open it within thirty minutes to choose a username and a password. Lost it?
-Re-run the migrator and it prints a fresh one — but only while no password has
-been set. Re-seeding never resets an existing one.
-
-There is deliberately no `ADMIN_PASSWORD`. It would sit in `.env.docker`, in
-`docker inspect`, in the shell history that wrote the file and in every backup
-of the host, still valid months later. A link that expires in half an hour is a
-smaller thing to leak.
+If `/setup` answers that it is not available, an admin already exists — the
+page is gone, not broken. There is no second bootstrap, by design; recovery is
+the password-reset control on the guest list, which is exactly what it is for.
 
 ### Invite-only, enforced in one place
 
@@ -191,26 +192,37 @@ in `databaseHooks.user.create.before`, read out of the invite row.
 Fields that are not declared at all — a chosen `id`, a posted `emailVerified` —
 reach the endpoint and are simply overruled. There are tests for both halves.
 
-### Exactly one admin
+### Three roles, unlimited admins
 
-Application code refuses to seed a second admin, but application code is one
-bug away from being wrong, so the storage layer enforces it too:
+Every account carries one of three roles:
 
-```sql
-CREATE UNIQUE INDEX "user_single_admin" ON "user" (role) WHERE role = 'admin';
-```
+- **`user`** files and follows their own requests.
+- **`manager`** works the queue beside the admin — accept, print, hand over,
+  flag, decline — and reads every ticket. They do not run the shop: no
+  invites, no members, no materials, no rates, no wishlist, no audit.
+- **`admin`** additionally runs the admin surface, and is the only role that
+  can change somebody else's role. The first admin comes from `/setup`.
 
-The index covers only admin rows, so it permits any number of clients and
-exactly one admin.
+The role is written server-side (`input: false`, like `initials`), changes are
+audited as `user.role_changed`, and the role controls guard themselves: you
+cannot change your own, and the last admin cannot demote themselves into a
+shop with no keys.
+
+The old deployment's single-admin constraint was lifted deliberately: a partial
+index used to permit exactly one admin row, which made handing over the shop a
+schema migration. Any number of admins is allowed now — the control that
+matters is what each role may do, not how rare one of them is.
 
 ### Authorisation
 
-[`src/lib/authz.ts`](../src/lib/authz.ts) holds the handoff's core rule as one
-exported fragment that every query composes:
+[`src/lib/scope.ts`](../src/lib/scope.ts) holds the core rule as one exported
+fragment that every query composes:
 
 ```ts
+// A user reads their own tickets; the print team (manager and admin) reads
+// every one. `isTeam` is the same test the queue actions use.
 export function storyScope(actor: Actor): Prisma.StoryWhereInput {
-  return actor.role === "admin" ? {} : { uploaderId: actor.id };
+  return isTeam(actor) ? {} : { uploaderId: actor.id };
 }
 ```
 
@@ -290,6 +302,6 @@ minutes is not long.
   hop from a set-password link and the sign-in would appear to silently fail.
 - **Reset tokens are hashed at rest.** `verification.storeIdentifier: "hashed"`
   means the table holds a digest, not a link anyone could paste into a URL.
-  `prisma/reset-token.ts` reproduces that digest for the two places that mint a
-  row directly — the admin control and the seed — and is the single definition
+  `prisma/reset-token.ts` reproduces that digest for the admin's reset control,
+  the one place that mints a row directly, and is the single definition
   of the format, because the migrator image ships `prisma/` and nothing else.

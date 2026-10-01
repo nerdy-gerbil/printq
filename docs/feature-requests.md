@@ -45,7 +45,7 @@ of ideas:
 | Print backlog | Feature track |
 | --- | --- |
 | `Story` | `FeatureRequest` |
-| `PPP-104` | `FRR-104` (`featureRef`) |
+| `PrintQ-104` | `FRR-104` (`featureRef`) |
 | `storyScope` | `featureScope` — a client sees their own, the owner sees all |
 | `FLOW` (Requested→…→Done) | `FEATURE_FLOW` (Requested→Accepted→In progress→Shipped→Done) |
 | `assertTransition` | `assertFeatureTransition` — forward-only, one step, Declined from Requested |

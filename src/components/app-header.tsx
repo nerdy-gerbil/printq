@@ -34,6 +34,9 @@ const ADMIN_NAV: Array<{ label: string; href: string }> = [
   // The board, not the triage queue: the team wants to see everything that
   // has been asked for, and triage is one button away on that page.
   { label: "Benefits", href: "/admin/benefits" },
+  { label: "Materials", href: "/admin/materials" },
+  { label: "Rates", href: "/admin/rates" },
+  { label: "Wishlist", href: "/admin/wishlist" },
   { label: "Guest list", href: "/admin/invites" },
   { label: "Audit", href: "/admin/audit" },
 ];
