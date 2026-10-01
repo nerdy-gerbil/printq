@@ -229,10 +229,10 @@ async function main() {
   // `/` redirects to the board, which is the client's home per the handoff.
   const home = await (await ayla.go(`${APP}/`)).text();
   check("she lands on an authenticated page", home.includes("The backlog"));
-  // The client kicker names the printer owner directly, the admin one does
-  // not — and the admin-only nav must be absent entirely.
-  check("the page is scoped to a client, not the admin",
-        home.includes(`Private to you and ${admin.name.split(" ")[0]}`) &&
+  // The user kicker does not claim the admin view, and the admin-only nav
+  // must be absent entirely.
+  check("the page is scoped to a user, not the admin",
+        home.includes("Private to you and the print team") &&
         !home.includes("Admin view") &&
         !home.includes("Guest list") &&
         !home.includes("/admin/audit"));
