@@ -5,7 +5,7 @@ import type { FeatureStatus, Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { record } from "@/lib/audit";
-import { notify, printerName, printerOwner } from "@/lib/authz";
+import { notify, notifyTeam, printerName, isTeam } from "@/lib/authz";
 import {
   AuthzError,
   FEATURE_FLOW,
@@ -162,10 +162,10 @@ export async function getFeature(actor: Actor, id: number): Promise<FeatureRow> 
   return feature;
 }
 
-/** The owner's view of a request for an action on it. Role is the control. */
-async function loadForAdmin(actor: Actor, id: number) {
-  if (actor.role !== "admin") {
-    throw problem(403, "Only the printer owner moves a request along.");
+/** The print team's view of a request for an action on it. Role is the control. */
+async function loadForTeam(actor: Actor, id: number) {
+  if (!isTeam(actor)) {
+    throw problem(403, "Only the print team moves a request along.");
   }
   const feature = await db.featureRequest.findUnique({
     where: { id },
@@ -202,14 +202,9 @@ export async function createFeature(actor: Actor, input: unknown) {
     select: FEATURE_FIELDS,
   });
 
-  const owner = await printerOwner();
-  if (owner && owner.id !== actor.id) {
-    await notify({
-      recipientId: owner.id,
-      featureId: feature.id,
-      text: `${actor.name} filed a request — “${title}”.`,
-    });
-  }
+  await notifyTeam(actor, `${actor.name} filed a request — “${title}”.`, {
+    featureId: feature.id,
+  });
 
   await record({
     action: "feature.created",
@@ -248,12 +243,11 @@ export async function withdrawFeature(actor: Actor, id: number) {
   }
 
   const ref = featureRef(feature.id);
-  const owner = await printerOwner();
 
   await db.featureRequest.delete({ where: { id: feature.id } });
 
-  if (owner && feature.status === "Requested" && owner.id !== actor.id) {
-    await notify({ recipientId: owner.id, text: `${actor.name} withdrew ${ref} — “${feature.title}”.` });
+  if (feature.status === "Requested") {
+    await notifyTeam(actor, `${actor.name} withdrew ${ref} — “${feature.title}”.`);
   }
 
   await record({
@@ -308,15 +302,19 @@ export async function changeFeaturePriority(actor: Actor, id: number, rawPriorit
   });
 
   // Tell the other side, the same direction a comment does: a requester's
-  // change reaches the owner (who triages by it); the owner's reaches the
+  // change reaches the team (who triage by it); a team member's reaches the
   // requester (whose ask it re-ranks).
-  const owner = await printerOwner();
-  const recipientId = actor.role === "admin" ? feature.requesterId : owner?.id;
-  if (recipientId && recipientId !== actor.id) {
-    await notify({
-      recipientId,
+  if (isTeam(actor)) {
+    if (feature.requesterId !== actor.id) {
+      await notify({
+        recipientId: feature.requesterId,
+        featureId: feature.id,
+        text: `${firstName(actor.name)} set “${feature.title}” to ${priority} priority.`,
+      });
+    }
+  } else {
+    await notifyTeam(actor, `${firstName(actor.name)} set “${feature.title}” to ${priority} priority.`, {
       featureId: feature.id,
-      text: `${firstName(actor.name)} set “${feature.title}” to ${priority} priority.`,
     });
   }
 
@@ -337,7 +335,7 @@ export async function changeFeaturePriority(actor: Actor, id: number, rawPriorit
 
 /** Move a request one step along the flow. Both "Accept it" and every later hop. */
 export async function advanceFeature(actor: Actor, id: number) {
-  const feature = await loadForAdmin(actor, id);
+  const feature = await loadForTeam(actor, id);
 
   const next = nextFeatureStatus(feature.status);
   if (!next) throw problem(409, `${featureLabel(feature.status)} is the end of the line.`);
@@ -375,7 +373,7 @@ export async function advanceFeature(actor: Actor, id: number) {
 
 /** Decline. Terminal, and only reachable from `Requested`. */
 export async function declineFeature(actor: Actor, id: number) {
-  const feature = await loadForAdmin(actor, id);
+  const feature = await loadForTeam(actor, id);
 
   try {
     assertFeatureTransition(actor, feature.status, "Declined");
@@ -457,13 +455,17 @@ export async function addFeatureComment(actor: Actor, id: number, rawBody: unkno
     select: FEATURE_COMMENT_FIELDS,
   });
 
-  const recipientId =
-    actor.role === "admin" ? feature.requesterId : (await printerOwner())?.id;
-  if (recipientId && recipientId !== actor.id) {
-    await notify({
-      recipientId,
+  if (isTeam(actor)) {
+    if (feature.requesterId !== actor.id) {
+      await notify({
+        recipientId: feature.requesterId,
+        featureId: feature.id,
+        text: `${firstName(actor.name)} commented on “${feature.title}”.`,
+      });
+    }
+  } else {
+    await notifyTeam(actor, `${firstName(actor.name)} commented on “${feature.title}”.`, {
       featureId: feature.id,
-      text: `${firstName(actor.name)} commented on “${feature.title}”.`,
     });
   }
 

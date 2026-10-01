@@ -99,8 +99,6 @@ jobs:
             echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)"
             echo "DB_PASSWORD=$(openssl rand -hex 24)"
             echo "S3_SECRET_KEY=$(openssl rand -hex 24)"
-            echo "ADMIN_EMAIL=ci-admin@example.test"
-            echo "ADMIN_NAME=Ruben Haas"
           } >> .env.docker
 
       - name: Raise the stack

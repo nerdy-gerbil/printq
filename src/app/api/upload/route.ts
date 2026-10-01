@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { currentUser, notify, printerOwner, storyRef } from "@/lib/authz";
+import { currentUser, notifyTeam, storyRef } from "@/lib/authz";
 import type { Actor } from "@/lib/scope";
 import { record } from "@/lib/audit";
 import { WishSchema, hexForColor } from "@/lib/catalog";
@@ -205,15 +205,10 @@ async function handleUpload(request: Request, user: Actor) {
     return bad(500, "The request could not be saved. Try again.");
   }
 
-  // "every upload notifies the admin"
-  const admin = await printerOwner();
-  if (admin) {
-    await notify({
-      recipientId: admin.id,
-      storyId: story.id,
-      text: `${user.name} uploaded “${title}”.`,
-    });
-  }
+  // "every upload notifies the team"
+  await notifyTeam(user, `${user.name} uploaded “${title}”.`, {
+    storyId: story.id,
+  });
 
   await record({
     action: "story.created",

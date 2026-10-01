@@ -14,7 +14,7 @@ import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { db } from "../src/lib/db";
-import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
+import { ensureAdmin, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 /**
  * The storage directory, read directly rather than through the app.
@@ -190,18 +190,18 @@ async function main() {
   await db.verification.deleteMany();
   await db.session.deleteMany();
   await db.invite.deleteMany();
-  await db.user.deleteMany({ where: { role: "client" } });
+  await db.user.deleteMany({ where: { role: "user" } });
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
+  const admin = await ensureAdmin(APP);
   if (!admin) throw new Error("No admin — run npm run db:seed");
 
   const ayla = await db.user.create({
     data: { email: "ayla@office.example", name: "Ayla Berg", initials: "AY",
-            role: "client", emailVerified: true, invitedById: admin.id },
+            role: "user", emailVerified: true, invitedById: admin.id },
   });
   const jonas = await db.user.create({
     data: { email: "jonas@office.example", name: "Jonas Weiss", initials: "JO",
-            role: "client", emailVerified: true, invitedById: admin.id },
+            role: "user", emailVerified: true, invitedById: admin.id },
   });
 
   const aylaB = await signIn(ayla);
@@ -216,7 +216,7 @@ async function main() {
   const res = await upload(aylaB, "monitor-hook-v3.stl", binaryStl(78, 40, 22));
   const payload = res.status === 200 ? await res.json() : { error: await res.text() };
   check("upload accepted", res.status === 200, `status ${res.status} ${JSON.stringify(payload).slice(0, 140)}`);
-  check("the response carries the display ref", payload.ref === "PPP-" + (100 + payload.id), JSON.stringify(payload));
+  check("the response carries the display ref", payload.ref === "PrintQ-" + (100 + payload.id), JSON.stringify(payload));
 
   const story = await db.story.findFirst({ where: { uploaderId: ayla.id } });
   check("a story row exists, owned by the uploader", story?.uploaderId === ayla.id);

@@ -92,7 +92,7 @@ export function StoryCard({
           <div className="mt-[11px] flex items-center gap-[8px] rounded-[6px] border-2 border-ink bg-sun-wash px-[8px] py-[4px]">
             <span
               aria-hidden
-              className="ppp-extrude h-[4px] w-[26px] flex-none rounded-full bg-sun-dk"
+              className="printq-extrude h-[4px] w-[26px] flex-none rounded-full bg-sun-dk"
             />
             <span className="font-mono text-[11px] font-bold uppercase tracking-[0.06em] text-sun-dk">
               on the bed

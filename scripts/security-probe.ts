@@ -15,7 +15,7 @@
 import "./_env";
 import { db } from "../src/lib/db";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
-import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
+import { ensureAdmin, TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 import { SESSION_IDLE_SECONDS } from "../src/lib/auth-rules";
 import { safeRedirect } from "../src/lib/safe-redirect";
 
@@ -167,21 +167,21 @@ async function main() {
   await db.notification.deleteMany();
   await db.story.deleteMany();
   await db.invite.deleteMany();
-  await db.user.deleteMany({ where: { role: "client" } });
+  await db.user.deleteMany({ where: { role: "user" } });
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
+  const admin = await ensureAdmin(APP);
   if (!admin) throw new Error("No admin — run npm run db:seed");
 
   const ayla = await db.user.create({
     data: {
       email: "ayla@office.example", name: "Ayla Berg", initials: "AY",
-      role: "client", emailVerified: true, invitedById: admin.id,
+      role: "user", emailVerified: true, invitedById: admin.id,
     },
   });
   const mallory = await db.user.create({
     data: {
       email: "mallory@office.example", name: "Mallory", initials: "MA",
-      role: "client", emailVerified: true, invitedById: admin.id,
+      role: "user", emailVerified: true, invitedById: admin.id,
     },
   });
   console.info(`  admin=${admin.email}  client=${ayla.email}  attacker=${mallory.email}`);
@@ -257,11 +257,11 @@ async function main() {
     ["list-sessions", "/api/auth/admin/list-user-sessions", { userId: "x" }],
     ["revoke-sessions", "/api/auth/admin/revoke-user-sessions", { userId: "x" }],
   ] as const) {
-    for (const [who, browser] of [["client", client], ["admin", ownerNow]] as const) {
+    for (const [who, browser] of [["user", client], ["admin", ownerNow]] as const) {
       const res = body
         ? await browser.json(path, { ...body, userId: ayla.id })
         : await browser.raw(APP + path, { headers: browser.headers() });
-      probe(`A01-${name}-${who}`, `admin API "${name}" does not exist for ${who === "admin" ? "an admin" : "a client"}`,
+      probe(`A01-${name}-${who}`, `admin API "${name}" does not exist for ${who === "admin" ? "an admin" : "a user"}`,
             res.status === 404,
             `expected 404, got ${res.status}: ${(await res.text()).slice(0, 90)}`);
     }
@@ -279,7 +279,7 @@ async function main() {
 
   const escalated = await db.user.findUnique({ where: { id: ayla.id } });
   probe("A01-role", "client role unchanged after escalation attempts",
-        escalated?.role === "client", `role is now ${escalated?.role}`);
+        escalated?.role === "user", `role is now ${escalated?.role}`);
   probe("A01-backdoor", "no back-door account was created",
         (await db.user.count({ where: { email: "backdoor@nowhere.test" } })) === 0);
 
@@ -295,7 +295,7 @@ async function main() {
   // Imported from scope.ts, not authz.ts: the pure rule, no "server-only".
   const { storyScope } = await import("../src/lib/scope");
   const asMallory = await db.story.findFirst({
-    where: { AND: [{ id: aylaStory.id }, storyScope({ ...mallory, role: "client" } as never)] },
+    where: { AND: [{ id: aylaStory.id }, storyScope({ ...mallory, role: "user" } as never)] },
   });
   probe("A01-idor", "storyScope hides another client's story", asMallory === null,
         "a client can read a story they do not own");
@@ -428,10 +428,10 @@ async function main() {
   // long after the credential has done its job — which would test nothing.
   const realStory = spoofed!;
   const ticket = await (await apiAdmin.raw(APP + `/story/${realStory.id}`)).text();
-  const minted = /ppp:\/\/slice\/\d+\?t=([A-Za-z0-9._-]+)/.exec(ticket)?.[1] ?? "";
+  const minted = /printq:\/\/slice\/\d+\?t=([A-Za-z0-9._-]+)/.exec(ticket)?.[1] ?? "";
   probe("A05-slicer-minted", "a ticket carries a slicer link with its own credential",
         minted.length > 0,
-        "no ppp:// link with a ?t= credential on the rendered ticket — the " +
+        "no printq:// link with a ?t= credential on the rendered ticket — the " +
         "helper would fall back to a long-lived token on disk");
 
   // Anonymous: no cookie, no bearer, exactly the helper's position.
@@ -602,8 +602,8 @@ async function main() {
         `got ${anonHome.status}`);
 
   const forged = new Browser();
-  forged.jar.set("ppp.session_token", "not-a-real-token");
-  forged.jar.set("__Secure-ppp.session_token", "not-a-real-token");
+  forged.jar.set("printq.session_token", "not-a-real-token");
+  forged.jar.set("__Secure-printq.session_token", "not-a-real-token");
   const forgedRes = await forged.go(`${APP}/`);
   const forgedBody = await forgedRes.text();
   probe("A01-forge", "a forged session cookie grants nothing",
@@ -940,9 +940,9 @@ async function main() {
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
   const freshIn = await attemptSignIn(fresh, usernameFor(ayla.email), TEST_PASSWORD);
   const freshCookie =
-    freshIn.headers.getSetCookie().find((c) => c.includes("ppp.session_token=")) ?? "";
+    freshIn.headers.getSetCookie().find((c) => c.includes("printq.session_token=")) ?? "";
   const freshToken = decodeURIComponent(
-    (fresh.jar.get("ppp.session_token") ?? fresh.jar.get("__Secure-ppp.session_token") ?? ""),
+    (fresh.jar.get("printq.session_token") ?? fresh.jar.get("__Secure-printq.session_token") ?? ""),
   ).split(".")[0];
 
   const freshRow = await db.session.findFirst({
@@ -982,7 +982,7 @@ async function main() {
   const nav = await fresh.raw(`${APP}/board`);
   const navMaxAge = Number(
     /max-age=(\d+)/i.exec(
-      nav.headers.getSetCookie().find((c) => c.includes("ppp.session_token=")) ?? "",
+      nav.headers.getSetCookie().find((c) => c.includes("printq.session_token=")) ?? "",
     )?.[1] ?? -1,
   );
   probe("A07-session-slides", "a page render pushes the cookie out too",
@@ -1008,8 +1008,8 @@ async function main() {
   const invitePage = await (await staleAdmin.go(`${APP}/admin/invites`)).text();
 
   const staleToken = decodeURIComponent(
-    (staleAdmin.jar.get("ppp.session_token") ??
-      staleAdmin.jar.get("__Secure-ppp.session_token") ?? ""),
+    (staleAdmin.jar.get("printq.session_token") ??
+      staleAdmin.jar.get("__Secure-printq.session_token") ?? ""),
   ).split(".")[0];
   await db.session.updateMany({
     where: { token: staleToken },
@@ -1071,7 +1071,7 @@ async function main() {
   // The specific token, not every session this user has: earlier probes in
   // this run opened several, and sign-out only ends the one it was called on.
   const revokedToken = decodeURIComponent(
-    (stolen.get("ppp.session_token") ?? stolen.get("__Secure-ppp.session_token") ?? ""),
+    (stolen.get("printq.session_token") ?? stolen.get("__Secure-printq.session_token") ?? ""),
   ).split(".")[0];
   probe("A07-session-row", "the signed-out session row is gone from the database",
         revokedToken.length > 0 &&
@@ -1108,7 +1108,7 @@ async function main() {
   });
   const created = await db.user.findUnique({ where: { email: "integrity@office.example" } });
   probe("A08-massassign", "privileged fields cannot be set from the request body",
-        created?.role === "client" && created.initials !== "ZZ" &&
+        created?.role === "user" && created.initials !== "ZZ" &&
         created.id !== "chosen-by-attacker" && created.invitedById === admin.id &&
         created.banned !== true,
         JSON.stringify({ role: created?.role, initials: created?.initials,

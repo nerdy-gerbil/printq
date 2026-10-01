@@ -18,7 +18,7 @@ import {
   featureRef as refOf,
   nextFeatureStatus,
 } from "../src/lib/scope";
-import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
+import { ensureAdmin, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 
@@ -122,15 +122,15 @@ async function main() {
   await db.verification.deleteMany();
   await db.session.deleteMany();
   await db.invite.deleteMany();
-  await db.user.deleteMany({ where: { role: "client" } });
+  await db.user.deleteMany({ where: { role: "user" } });
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
+  const admin = await ensureAdmin(APP);
   if (!admin) throw new Error("No admin — run npm run db:seed");
   const ayla = await db.user.create({
-    data: { email: "ayla@office.example", name: "Ayla Berg", initials: "AY", role: "client", emailVerified: true, invitedById: admin.id },
+    data: { email: "ayla@office.example", name: "Ayla Berg", initials: "AY", role: "user", emailVerified: true, invitedById: admin.id },
   });
   const mallory = await db.user.create({
-    data: { email: "mallory@office.example", name: "Mallory Quint", initials: "MQ", role: "client", emailVerified: true, invitedById: admin.id },
+    data: { email: "mallory@office.example", name: "Mallory Quint", initials: "MQ", role: "user", emailVerified: true, invitedById: admin.id },
   });
 
   const ruben = await signIn(admin);

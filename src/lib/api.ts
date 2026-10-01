@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { currentUser } from "@/lib/authz";
-import { storyRef, type Actor } from "@/lib/scope";
+import { isTeam, storyRef, type Actor } from "@/lib/scope";
 import { StoryProblem, type CommentRow, type StoryRow } from "@/lib/stories";
 import type { Prisma } from "@prisma/client";
 
@@ -19,12 +19,12 @@ import type { Prisma } from "@prisma/client";
  * its own authorisation check, and `withActor` is how it pays.
  *
  * **2. The API says 403 where a page says 404.** Everywhere else in this app
- * an admin-only surface answers 404, because a 403 would confirm the route
+ * a team-only surface answers 404, because a 403 would confirm the route
  * exists. That reasoning does not survive publishing an OpenAPI document:
  * `/api/stories/{id}/advance` is listed at `/api/openapi.json` and rendered at
  * `/docs`, so its existence is already public and a 404 would be theatre —
  * worse than theatre, because it would tell an honest client that their
- * ticket had vanished when the truth is that they are not the printer owner.
+ * ticket had vanished when the truth is that they are not on the team.
  * Existence of a *ticket* is still hidden: an unauthorised read is 404, via
  * `storyScope`, exactly as before.
  *
@@ -83,7 +83,7 @@ type Handler<P> = (
 type Context<P> = { params: Promise<P> };
 
 type Options = {
-  /** Refuse anyone but the printer owner, with 403. */
+  /** Refuse anyone but the print team (admin or manager), with 403. */
   admin?: boolean;
 };
 
@@ -108,8 +108,8 @@ export function withActor<P = Record<string, string>>(
     const actor = await currentUser();
     if (!actor) return fail(401, "Sign in first.");
 
-    if (options.admin && actor.role !== "admin") {
-      return fail(403, "Only the printer owner can do that.");
+    if (options.admin && !isTeam(actor)) {
+      return fail(403, "Only the print team can do that.");
     }
 
     try {

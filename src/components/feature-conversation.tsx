@@ -15,7 +15,7 @@ export function FeatureConversation({
 }: {
   featureId: number;
   comments: FeatureCommentRow[];
-  viewerRole: "client" | "admin";
+  viewerRole: "admin" | "manager" | "user";
   ownerName: string;
 }) {
   return (

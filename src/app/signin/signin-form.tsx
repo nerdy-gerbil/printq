@@ -129,7 +129,7 @@ export function SignInForm({ next }: { next: string }) {
       {error && <Notice tone="warn">{error}</Notice>}
 
       <p className="m-0 border-t-2 border-dashed border-rule pt-[13.2px] text-[13.5px] leading-[1.5] text-ink-2">
-        Pretty Please Print is invite-only — there is no sign-up. If you have not
+        PrintQ - Requests is invite-only — there is no sign-up. If you have not
         been invited yet, or you have forgotten your password, ask whoever owns
         the printer.
       </p>

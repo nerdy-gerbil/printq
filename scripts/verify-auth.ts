@@ -14,11 +14,11 @@
  * Point it at a development database only.
  */
 import "./_env";
-import { PrismaClient } from "@prisma/client";
+
 import { db } from "../src/lib/db";
 import { createInvite, mailConfigured } from "../src/lib/invites";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
-import { TEST_PASSWORD, ensureCredentials, signInWithPassword } from "./_accounts";
+import { ensureAdmin, TEST_PASSWORD, ensureCredentials, signInWithPassword } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const MAILPIT = process.env.MAILPIT_URL ?? "http://localhost:8025";
@@ -153,11 +153,10 @@ async function main() {
   // of these happened" has to start from an empty one.
   await db.auditEvent.deleteMany();
   await db.invite.deleteMany();
-  await db.user.deleteMany({ where: { role: "client" } });
+  await db.user.deleteMany({ where: { role: "user" } });
   await fetch(`${MAILPIT}/api/v1/messages`, { method: "DELETE" });
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
-  if (!admin) throw new Error("No admin. Run `npm run db:seed` first.");
+  const admin = await ensureAdmin(APP);
   console.info(`  admin: ${admin.name} <${admin.email}>`);
 
   // ------------------------------------------------------------------------
@@ -230,17 +229,17 @@ async function main() {
   // `/` redirects to the board, which is the client's home per the handoff.
   const home = await (await ayla.go(`${APP}/`)).text();
   check("she lands on an authenticated page", home.includes("The backlog"));
-  // The client kicker names the printer owner directly, the admin one does
-  // not — and the admin-only nav must be absent entirely.
-  check("the page is scoped to a client, not the admin",
-        home.includes(`Private to you and ${admin.name.split(" ")[0]}`) &&
+  // The user kicker does not claim the admin view, and the admin-only nav
+  // must be absent entirely.
+  check("the page is scoped to a user, not the admin",
+        home.includes("Private to you and the print team") &&
         !home.includes("Admin view") &&
         !home.includes("Guest list") &&
         !home.includes("/admin/audit"));
 
   const account = await db.user.findUnique({ where: { email: AYLA } });
   check("the account is stamped from the invite, not the request",
-        account?.role === "client" &&
+        account?.role === "user" &&
         account.initials === "AY" &&
         account.invitedById === admin.id &&
         account.emailVerified === true,
@@ -385,7 +384,7 @@ async function main() {
   });
   const bobRow = await db.user.findUnique({ where: { email: BOB } });
   check("role, initials and invitedById are stamped from the invite",
-        bobRow?.role === "client" &&
+        bobRow?.role === "user" &&
         bobRow.initials === "BO" &&
         bobRow.invitedById === admin.id,
         JSON.stringify({ role: bobRow?.role, initials: bobRow?.initials,
@@ -565,31 +564,33 @@ async function main() {
         ownerSignIn.status === 200 && signedIn(ownerIn), `status ${ownerSignIn.status}`);
 
   const ownerHome = await (await ownerIn.go(`${APP}/admin/invites`)).text();
-  check("as the admin, not as a client", ownerHome.includes("The guest list"));
+  check("as the admin, not as a user", ownerHome.includes("The guest list"));
 
   // --------------------------------------------------------------------------
-  section("13. the database itself permits only one admin");
-  check("exactly one admin exists",
-        (await db.user.count({ where: { role: "admin" } })) === 1);
-  // A client with logging off: the constraint violation below is the expected
-  // result, and the shared client would print it as though something broke.
-  const quiet = new PrismaClient({ log: [] });
-  let rejected = false;
-  try {
-    await quiet.user.create({
-      data: {
-        email: "usurper@nowhere.test",
-        name: "Usurper",
-        initials: "US",
-        role: "admin",
-      },
-    });
-  } catch {
-    rejected = true;
-  } finally {
-    await quiet.$disconnect();
-  }
-  check("a second admin row is rejected by the partial unique index", rejected);
+  section("13. multiple admins are allowed, and promotion is audited");
+  // PrintQ drops the single-admin constraint: a manager or a second admin can
+  // hold the keys, and the guest list guards against the last admin going
+  // away. The suite asserts the new world — an arbitrary number of admin rows,
+  // with the role change landing in the trail.
+  const before = await db.user.count({ where: { role: "admin" } });
+  const second = await db.user.create({
+    data: {
+      email: "second-admin@nowhere.test",
+      name: "Second Admin",
+      initials: "SA",
+      role: "admin",
+      emailVerified: true,
+    },
+  });
+  check("a second admin row is accepted — no single-admin index",
+        (await db.user.count({ where: { role: "admin" } })) === before + 1);
+  await db.user.update({
+    where: { id: second.id },
+    data: { role: "user" },
+  });
+  check("and it can be demoted again",
+        (await db.user.count({ where: { role: "admin" } })) === before);
+  await db.user.delete({ where: { id: second.id } });
 
   // ------------------------------------------------------------------------
   console.info(

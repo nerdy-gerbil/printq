@@ -36,6 +36,7 @@ export type InviteFormState = {
 const InviteSchema = z.object({
   email: z.email("That does not look like an email address."),
   name: z.string().trim().max(80).optional(),
+  role: z.enum(["user", "manager", "admin"]).default("user"),
 });
 
 export async function sendInviteAction(
@@ -51,6 +52,7 @@ export async function sendInviteAction(
   const parsed = InviteSchema.safeParse({
     email: formData.get("email"),
     name: formData.get("name") || undefined,
+    role: formData.get("role") || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Check the form." };
@@ -60,6 +62,7 @@ export async function sendInviteAction(
     const { invite, handoverUrl } = await createInvite({
       email: parsed.data.email,
       name: parsed.data.name ?? null,
+      role: parsed.data.role,
       invitedById: admin.id,
     });
     await record({
@@ -242,6 +245,62 @@ export async function setMemberAccessAction(
     actor: admin,
     subject: target.email,
     detail: { forName: target.name },
+  });
+
+  revalidatePath("/admin/invites");
+  return { sent: target.email };
+}
+
+/**
+ * Change a member's access level (user / manager / admin).
+ *
+ * Admin-only, and guarded against the two ways an admin surface can lock
+ * itself out: an admin cannot change their own role (no self-demotion from
+ * the last admin), and the change cannot leave the app without an admin.
+ */
+export async function setMemberRoleAction(
+  _prev: InviteFormState,
+  formData: FormData,
+): Promise<InviteFormState> {
+  const admin = await requireAdmin();
+  await requireFreshAuth("/admin/invites");
+  const userId = String(formData.get("userId") ?? "");
+  const role = String(formData.get("role") ?? "");
+
+  if (!(["user", "manager", "admin"] as const).includes(role as "user")) {
+    return { error: "That is not an access level." };
+  }
+
+  const target = await db.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, role: true },
+  });
+  if (!target) return { error: "No such member." };
+
+  if (target.role === role) {
+    return { sent: target.email };
+  }
+
+  if (target.id === admin.id) {
+    return { error: "You cannot change your own role — ask another admin." };
+  }
+
+  if (target.role === "admin" && role !== "admin") {
+    const adminsLeft = await db.user.count({
+      where: { role: "admin", id: { not: target.id }, banned: false },
+    });
+    if (adminsLeft === 0) {
+      return { error: "That would leave nobody with full control. Promote another admin first." };
+    }
+  }
+
+  await db.user.update({ where: { id: target.id }, data: { role: role as "user" | "manager" | "admin" } });
+
+  await record({
+    action: "user.role_changed",
+    actor: admin,
+    subject: target.email,
+    detail: { from: target.role, to: role, forName: target.name },
   });
 
   revalidatePath("/admin/invites");

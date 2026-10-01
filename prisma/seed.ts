@@ -1,82 +1,25 @@
 /**
- * Bootstraps the single admin — the printer owner.
+ * Seeds the owner-managed catalogues — the default benefits, materials and
+ * cost rates.
  *
- * This is the one account that is not created by an invitation, because
- * somebody has to be able to send the first one. It is written straight
- * through Prisma rather than Better Auth: there is no invite to validate
- * against, only a row.
+ * The administrator is NOT seeded. The first admin is created through the
+ * first-run /setup page, which whoever deploys the app opens once; there are
+ * no ADMIN_EMAIL / ADMIN_NAME variables to set. (A password in `.env.docker`
+ * was never acceptable either — it lives in `docker inspect`, in the shell
+ * history that wrote the file, and in every backup of the host — and the
+ * set-password link the seed used to print was one more moving part.)
  *
- * The row alone cannot sign in — it has no password and no username. So when
- * the admin has no credential yet, the seed mints a single-use set-password
- * link and prints it. That link is the whole handover: whoever runs the deploy
- * reads it out of the container logs and uses it once.
- *
- * The password deliberately does NOT come from the environment. A password in
- * `.env.docker` is a password in `docker inspect`, in the shell history that
- * wrote the file, and in every backup of the host — and it would still be
- * sitting there, valid, months later. A link that expires in half an hour is
- * a smaller thing to leak.
- *
- * Idempotent: re-running it updates the name, and mints a new link only while
- * the admin still has no password. It never resets an existing one.
+ * Idempotent and non-destructive: an upsert per row with an empty update, so
+ * a re-run (the migrator runs the seed on every deploy) never overwrites the
+ * owner's edits — a renamed, retired or repriced row is left exactly as they
+ * set it, and a retired default is not resurrected. New defaults are appended.
  */
 import { PrismaClient } from "@prisma/client";
 
-import { RESET_TTL_MINUTES, newResetToken, resetIdentifier } from "./reset-token";
-
 const db = new PrismaClient();
 
-// Mirrors src/lib/tokens.ts. Duplicated so the seed runs without the app's
-// module graph (and its "server-only" imports).
-function initialsFor(name: string): string {
-  const first = name.trim().split(/\s+/).filter(Boolean)[0];
-  if (!first) return "??";
-  return [...first].slice(0, 2).join("").toUpperCase();
-}
-
-const appUrl = (path: string) =>
-  new URL(path, process.env.BETTER_AUTH_URL ?? "http://localhost:3000").toString();
-
 async function main() {
-  const email = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
-  const name = (process.env.ADMIN_NAME ?? "").trim();
-
-  if (!email || !name) {
-    throw new Error(
-      "Set ADMIN_EMAIL and ADMIN_NAME in .env before seeding — they define " +
-        "the printer owner.",
-    );
-  }
-
-  const existingAdmin = await db.user.findFirst({ where: { role: "admin" } });
-
-  if (existingAdmin && existingAdmin.email !== email) {
-    throw new Error(
-      `An admin already exists (${existingAdmin.email}). This app has exactly ` +
-        `one. To hand the printer over, change that user's email instead of ` +
-        `seeding a second admin — the database will reject it anyway.`,
-    );
-  }
-
-  const admin = await db.user.upsert({
-    where: { email },
-    update: { name, initials: initialsFor(name) },
-    create: {
-      email,
-      name,
-      initials: initialsFor(name),
-      role: "admin",
-      emailVerified: true,
-    },
-  });
-
-  console.info(`Printer owner ready: ${admin.name} <${admin.email}>`);
-
-  // The default benefits (tip options). Idempotent and non-destructive: an
-  // upsert per label with an empty update, so a re-run (the migrator runs the
-  // seed on every deploy) never overwrites the owner's edits — a renamed,
-  // retired or preferred benefit is left exactly as they set it, and a retired
-  // default is not resurrected. New default labels are appended.
+  // The default benefits (tip options).
   const DEFAULT_BENEFITS = [
     "A beer",
     "A coffee",
@@ -93,45 +36,42 @@ async function main() {
   }
   console.info(`Benefits ready: ${DEFAULT_BENEFITS.length} default tip(s) present.`);
 
-  // A `credential` account with a password is the thing that makes signing in
-  // possible. A passkey creates no such row, so somebody who enrolled one and
-  // never set a password still counts as needing this — which is correct: the
-  // passkey is the accelerator, the password is the way back.
-  const credential = await db.account.findFirst({
-    where: { userId: admin.id, providerId: "credential", password: { not: null } },
-    select: { id: true },
-  });
-
-  if (credential) {
-    console.info(
-      "A password is already set. Re-seeding never resets it — use " +
-        "\"Forgotten password?\" on the guest list if it has been lost.",
-    );
-    return;
+  // The default materials. Same shape as benefits above.
+  const DEFAULT_MATERIALS = ["PLA", "PETG", "TPU", "Resin"];
+  for (let i = 0; i < DEFAULT_MATERIALS.length; i++) {
+    await db.material.upsert({
+      where: { name: DEFAULT_MATERIALS[i]! },
+      update: {},
+      create: { name: DEFAULT_MATERIALS[i]!, sortOrder: i + 1 },
+    });
   }
-
-  // Any link an earlier run printed goes first, so "re-run it and a fresh link
-  // appears" is true rather than "and now there are two". Reset rows are the
-  // only ones whose value is a bare user id; WebAuthn challenges store JSON.
-  await db.verification.deleteMany({ where: { value: admin.id } });
-
-  const token = newResetToken();
-  await db.verification.create({
-    data: {
-      identifier: resetIdentifier(token),
-      value: admin.id,
-      expiresAt: new Date(Date.now() + RESET_TTL_MINUTES * 60_000),
-    },
-  });
-
-  const url = appUrl(`/set-password?token=${encodeURIComponent(token)}`);
-
   console.info(
-    `\nNo password set yet. Open this once, within ${RESET_TTL_MINUTES} minutes,\n` +
-      `to choose a username and a password:\n\n  ${url}\n\n` +
-      "Then invite the rest of the office from /admin/invites.\n" +
-      "Lost it? Re-run the seed and a fresh link is printed.",
+    `Materials ready: ${DEFAULT_MATERIALS.length} default material(s) present.`,
   );
+
+  // The default cost-calculator rates. Idempotent per-key upserts, same shape
+  // as benefits: a re-run never overwrites a price the owner already changed.
+  const DEFAULT_MATERIAL_RATES: Record<string, number> = {
+    PLA: 20.0,
+    PETG: 22.0,
+    TPU: 28.0,
+    Resin: 45.0,
+  };
+  for (const [material, dollarsPerKg] of Object.entries(DEFAULT_MATERIAL_RATES)) {
+    await db.materialRate.upsert({
+      where: { material },
+      update: {},
+      create: { material, dollarsPerKg },
+    });
+  }
+  await db.machineRate.upsert({
+    where: { id: "default" },
+    update: {},
+    create: { id: "default", dollarsPerHour: 0.75 },
+  });
+  console.info("Cost calculator rates ready (edit them at /admin/rates).");
+
+  console.info("No administrator is seeded — open /setup once to claim the printer.");
 }
 
 main()

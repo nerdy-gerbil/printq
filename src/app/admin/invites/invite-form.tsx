@@ -62,6 +62,19 @@ export function InviteForm() {
             autoComplete="off"
           />
         </div>
+        <div>
+          <Label htmlFor="invite-role">Access level</Label>
+          <select
+            id="invite-role"
+            name="role"
+            defaultValue="user"
+            className="h-[42px] w-full rounded-chip border-[3px] border-ink bg-porcelain px-[13px] font-mono text-[14px] text-ink"
+          >
+            <option value="user">User — files requests</option>
+            <option value="manager">Manager — also works the queue</option>
+            <option value="admin">Admin — full control</option>
+          </select>
+        </div>
       </div>
 
       <div className="mt-[17.6px] flex flex-wrap items-center gap-[13.2px]">

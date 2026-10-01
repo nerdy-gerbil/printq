@@ -57,7 +57,7 @@ export default async function FeatureBoardPage({
               {isAdmin ? "Everything asked for" : "What you've asked for"}
             </h1>
             <p className="m-0 mt-[8px] max-w-[60ch] text-[15px] text-ink-2">
-              Ask for a change to Pretty Please Print, and follow it through the same
+              Ask for a change to PrintQ - Requests, and follow it through the same
               stages a print goes through. {owner} sees each one and moves it along.
             </p>
           </div>
