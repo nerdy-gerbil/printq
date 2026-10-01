@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 
-import { requireAdmin, requireUser } from "@/lib/authz";
+import { requireManager, requireUser } from "@/lib/authz";
 import {
   StoryProblem,
   advanceStory as advance,
@@ -16,7 +16,7 @@ import {
 } from "@/lib/stories";
 
 /**
- * The printer owner's panel, as plain forms.
+ * The print team's panel, as plain forms.
  *
  * What each of these *does* lives in `src/lib/stories.ts`, which the JSON API
  * calls too — the rules about who may move a ticket, from which state, who
@@ -24,10 +24,11 @@ import {
  * cannot drift apart. This file is the adapter: read a `FormData`, call the
  * operation, turn the outcome into a redirect.
  *
- * `requireAdmin()` still runs first, and is not redundant with the role check
- * inside the service. It is the one that answers 404 rather than 403, which is
- * what a page owes a client poking at a control that was never drawn for
- * them — the API answers differently, and deliberately. See `src/lib/api.ts`.
+ * `requireManager()` still runs first, and is not redundant with the role
+ * check inside the service. It is the one that answers 404 rather than 403,
+ * which is what a page owes a user poking at a control that was never drawn
+ * for them — the API answers differently, and deliberately. See
+ * `src/lib/api.ts`.
  */
 
 /**
@@ -71,33 +72,33 @@ async function run(
 }
 
 export async function advanceStory(formData: FormData): Promise<void> {
-  const admin = await requireAdmin();
+  const team = await requireManager();
   await run(formData, async (id) => {
-    const done = await advance(admin, id);
+    const done = await advance(team, id);
     return { toast: `“${done.title}” → ${done.to} · ${done.uploaderName} notified` };
   });
 }
 
 export async function declineStory(formData: FormData): Promise<void> {
-  const admin = await requireAdmin();
+  const team = await requireManager();
   await run(formData, async (id) => {
-    const done = await decline(admin, id);
+    const done = await decline(team, id);
     return { toast: `Declined · ${done.uploaderName} notified` };
   });
 }
 
 export async function flagStory(formData: FormData): Promise<void> {
-  const admin = await requireAdmin();
+  const team = await requireManager();
   await run(formData, async (id) => {
-    const done = await flag(admin, id, formData.get("reason") ?? "");
+    const done = await flag(team, id, formData.get("reason") ?? "");
     return { toast: `Flagged · ${done.uploaderName} notified` };
   });
 }
 
 export async function clearFlag(formData: FormData): Promise<void> {
-  const admin = await requireAdmin();
+  const team = await requireManager();
   await run(formData, async (id) => {
-    const done = await clear(admin, id);
+    const done = await clear(team, id);
     return { toast: `Flag cleared · ${done.uploaderName} notified` };
   });
 }

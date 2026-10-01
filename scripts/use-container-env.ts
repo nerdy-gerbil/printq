@@ -55,8 +55,6 @@ const written = [
   // straight off disk to confirm the app really wrote them, so they need the
   // path as this machine sees it, not as the container does.
   `MODELS_ROOT="${need("DATA_ROOT", "./data")}/uploads"`,
-  `ADMIN_EMAIL="${need("ADMIN_EMAIL")}"`,
-  `ADMIN_NAME="${need("ADMIN_NAME")}"`,
   `MAIL_FROM="${need("MAIL_FROM")}"`,
   `SMTP_URL="smtp://localhost:1025"`,
   "",

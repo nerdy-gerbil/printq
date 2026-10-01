@@ -22,7 +22,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, dirname, normalize, relative } from "node:path";
 
-const SKIP = new Set(["node_modules", ".git", ".next", "Pretty Please Print", "shots", "data"]);
+const SKIP = new Set(["node_modules", ".git", ".next", "Pretty Please Print", "shots", "data"]); // design handoff keeps its name
 
 function markdownFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

@@ -13,30 +13,35 @@ export type Actor = {
   name: string;
   email: string;
   initials: string;
-  role: "client" | "admin";
+  role: "admin" | "manager" | "user";
 };
 
+/** Who counts as "the print team" — the people who work the queue. */
+export const TEAM_ROLES: readonly Actor["role"][] = ["admin", "manager"];
+
+export const isTeam = (actor: Actor): boolean => TEAM_ROLES.includes(actor.role);
+
 /**
- * The handoff's core rule:
+ * The scope rule:
  *
- *   Client -> only stories where uploaderId == self
- *   Admin  -> everything
+ *   User            -> only stories where uploaderId == self
+ *   Manager, admin  -> everything (the team works the queue)
  *
  * Every list query composes this. One place to audit, and a new screen
  * cannot quietly forget it.
  */
 export function storyScope(actor: Actor): Prisma.StoryWhereInput {
-  return actor.role === "admin" ? {} : { uploaderId: actor.id };
+  return isTeam(actor) ? {} : { uploaderId: actor.id };
 }
 
 /**
- * Display key: PPP-104 for story 4.
+ * Display key: PrintQ-104 for story 4.
  *
  * The handoff writes this as "PTFM-", after the product's old name. The
  * prefix exists to be recognisable when someone pastes it into chat, so it
  * tracks what the product is actually called.
  */
-export const storyRef = (id: number) => `PPP-${100 + id}`;
+export const storyRef = (id: number) => `PrintQ-${100 + id}`;
 
 /**
  * The order a request moves through, and the only order it may move in.
@@ -83,7 +88,7 @@ export function nextStatus(current: StoryStatus): StoryStatus | null {
 export class AuthzError extends Error {}
 
 /**
- * Only the admin moves a story, only forwards, only one step at a time.
+ * Only the print team moves a story, only forwards, only one step at a time.
  * `Declined` is reachable from `Requested` alone.
  */
 export function assertTransition(
@@ -91,8 +96,8 @@ export function assertTransition(
   from: StoryStatus,
   to: StoryStatus,
 ): void {
-  if (actor.role !== "admin") {
-    throw new AuthzError("Only the printer owner moves a story along.");
+  if (!isTeam(actor)) {
+    throw new AuthzError("Only the print team moves a story along.");
   }
   if (to === "Declined") {
     if (from !== "Requested") {
@@ -152,17 +157,17 @@ export const featureLabel = (status: FeatureStatus): string =>
 
 /**
  * Display ref: FRR-101 for feature request 1. Recognisable when pasted into
- * chat, and parallel to `PPP-` for a print.
+ * chat, and parallel to `PrintQ-` for a print.
  */
 export const featureRef = (id: number) => `FRR-${100 + id}`;
 
 /**
  * The scope rule, mirroring `storyScope`:
- *   Client -> only their own requests
- *   Admin  -> everything
+ *   User            -> only their own requests
+ *   Manager, admin  -> everything
  */
 export function featureScope(actor: Actor): Prisma.FeatureRequestWhereInput {
-  return actor.role === "admin" ? {} : { requesterId: actor.id };
+  return isTeam(actor) ? {} : { requesterId: actor.id };
 }
 
 export function isFeatureTerminal(status: FeatureStatus): boolean {
@@ -176,16 +181,16 @@ export function nextFeatureStatus(current: FeatureStatus): FeatureStatus | null 
 }
 
 /**
- * Only the owner moves a request, only forwards, only one step at a time.
- * `Declined` is reachable from `Requested` alone.
+ * Only the print team moves a request, only forwards, only one step at a
+ * time. `Declined` is reachable from `Requested` alone.
  */
 export function assertFeatureTransition(
   actor: Actor,
   from: FeatureStatus,
   to: FeatureStatus,
 ): void {
-  if (actor.role !== "admin") {
-    throw new AuthzError("Only the printer owner moves a request along.");
+  if (!isTeam(actor)) {
+    throw new AuthzError("Only the print team moves a request along.");
   }
   if (to === "Declined") {
     if (from !== "Requested") {

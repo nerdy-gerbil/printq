@@ -72,7 +72,7 @@ export async function GET(
           name: row.name,
           email: row.email,
           initials: row.initials ?? "??",
-          role: row.role === "admin" ? "admin" : "client",
+          role: row.role === "admin" ? "admin" : row.role === "manager" ? "manager" : "user",
         } satisfies Actor;
         viaLink = true;
       }

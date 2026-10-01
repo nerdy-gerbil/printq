@@ -18,7 +18,7 @@ export function UserMenu({
   name: string;
   initials: string;
   email: string;
-  role: "client" | "admin";
+  role: "admin" | "manager" | "user";
   passkeyCount: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -52,7 +52,7 @@ export function UserMenu({
       </button>
 
       {open && (
-        <div className="ppp-in absolute right-0 top-[50px] z-50 w-[264px] rounded-panel border-[3px] border-ink bg-porcelain p-[17.6px] shadow-stamp-lg">
+        <div className="printq-in absolute right-0 top-[50px] z-50 w-[264px] rounded-panel border-[3px] border-ink bg-porcelain p-[17.6px] shadow-stamp-lg">
           <p className="m-0 font-display text-[17px] text-ink">{name}</p>
           <p className="m-0 mt-[2px] font-mono text-[11.5px] text-ink-3">{email}</p>
           <p className="m-0 mt-[8.8px] inline-block rounded-chip border-2 border-ink bg-cream-2 px-[8px] font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink">

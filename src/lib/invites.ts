@@ -114,7 +114,7 @@ export async function createInvite(opts: {
       email,
       tokenHash: hashToken(token),
       name: opts.name?.trim() || null,
-      role: opts.role ?? "client",
+      role: opts.role ?? "user",
       invitedById: opts.invitedById,
       expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000),
     },

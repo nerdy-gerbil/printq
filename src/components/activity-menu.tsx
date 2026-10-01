@@ -66,7 +66,7 @@ export function ActivityMenu({
       </button>
 
       {open && (
-        <div className="ppp-in absolute right-0 top-[50px] z-50 w-[360px] max-w-[84vw] rounded-panel border-[3px] border-ink bg-porcelain p-[17.6px] shadow-stamp-lg">
+        <div className="printq-in absolute right-0 top-[50px] z-50 w-[360px] max-w-[84vw] rounded-panel border-[3px] border-ink bg-porcelain p-[17.6px] shadow-stamp-lg">
           <div className="mb-[8.8px] flex items-baseline justify-between gap-[13.2px]">
             <h2 className="m-0 font-display text-[17px]">
               {title}

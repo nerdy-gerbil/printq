@@ -306,10 +306,10 @@ async function main() {
     `  unreferenced objects left in the bucket  ${orphans < 0 ? "(could not list)" : orphans}`,
   );
 
-  for (const r of missing.slice(0, 10)) console.info(`    MISSING     PPP-${100 + r.id}  ${r.storageKey}`);
-  for (const w of wrongSize.slice(0, 10)) console.info(`    SIZE        PPP-${100 + w.row.id}  expected ${w.row.fileSize}, got ${w.actual}`);
-  for (const c of corrupt.slice(0, 10)) console.info(`    CONTENT     PPP-${100 + c.row.id}  ${c.why}`);
-  for (const f of failures.slice(0, 10)) console.info(`    EXPORT      PPP-${100 + f.row.id}  ${f.why}`);
+  for (const r of missing.slice(0, 10)) console.info(`    MISSING     PrintQ-${100 + r.id}  ${r.storageKey}`);
+  for (const w of wrongSize.slice(0, 10)) console.info(`    SIZE        PrintQ-${100 + w.row.id}  expected ${w.row.fileSize}, got ${w.actual}`);
+  for (const c of corrupt.slice(0, 10)) console.info(`    CONTENT     PrintQ-${100 + c.row.id}  ${c.why}`);
+  for (const f of failures.slice(0, 10)) console.info(`    EXPORT      PrintQ-${100 + f.row.id}  ${f.why}`);
 
   const bad = missing.length + wrongSize.length + corrupt.length + failures.length;
   if (bad > 0) {

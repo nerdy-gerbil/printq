@@ -5,7 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { storyScope, type Actor } from "@/lib/scope";
+import { isTeam, storyScope, type Actor } from "@/lib/scope";
 
 // The pure rules live in `scope.ts` so they can be imported without pulling in
 // `server-only`. Re-exported here so callers have one import to reach for.
@@ -18,6 +18,8 @@ export {
   nextStatus,
   assertTransition,
   AuthzError,
+  isTeam,
+  TEAM_ROLES,
   // feature-request rules (the 'frr' track)
   featureScope,
   featureRef,
@@ -52,12 +54,15 @@ export async function currentUser(): Promise<Actor | null> {
 
   if (u.banned) return null;
 
+  const role: Actor["role"] =
+    u.role === "admin" ? "admin" : u.role === "manager" ? "manager" : "user";
+
   return {
     id: u.id,
     name: u.name,
     email: u.email,
     initials: u.initials ?? "??",
-    role: u.role === "admin" ? "admin" : "client",
+    role,
   };
 }
 
@@ -77,7 +82,8 @@ export async function requireUser(returnTo?: string): Promise<Actor> {
 }
 
 /**
- * Gate for admin-only surfaces (the queue, invite management).
+ * Gate for admin-only surfaces (invites, members, benefits, materials,
+ * rates, audit, wishlist).
  *
  * Answers 404 rather than 403 on purpose: a client poking at /admin/invites
  * learns nothing about whether that route exists.
@@ -85,6 +91,17 @@ export async function requireUser(returnTo?: string): Promise<Actor> {
 export async function requireAdmin(): Promise<Actor> {
   const user = await requireUser();
   if (user.role !== "admin") notFound();
+  return user;
+}
+
+/**
+ * Gate for print-team surfaces — the queue and the frr triage queue.
+ * Managers work the queue alongside admins; ordinary users get a 404, same
+ * reasoning as `requireAdmin`.
+ */
+export async function requireManager(): Promise<Actor> {
+  const user = await requireUser();
+  if (!isTeam(user)) notFound();
   return user;
 }
 
@@ -113,24 +130,33 @@ export async function getStoryOr404(storyId: number, actor: Actor) {
 // Notifications
 // ---------------------------------------------------------------------------
 
-/** The admin (printer owner). Every upload notification goes here. */
-export const printerOwner = cache(() =>
-  db.user.findFirst({ where: { role: "admin" } }),
-);
+/**
+ * The print team — every admin and manager. Upload and status notifications
+ * fan out to all of them, since any of them can pick the ticket up.
+ */
+export async function printTeam(): Promise<Actor[]> {
+  const rows = await db.user.findMany({
+    where: { role: { in: ["admin", "manager"] }, banned: false },
+    select: { id: true, name: true, email: true, initials: true, role: true },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    initials: r.initials,
+    role: r.role as Actor["role"],
+  }));
+}
 
 /**
- * The printer owner's first name, for copy that addresses them directly —
- * "Send it to Ruben", "what's in it for Ruben?". The handoff writes the copy
- * this way on purpose: you are asking a colleague a favour, not filing a
- * ticket against a role.
+ * Copy for the people who work the queue — "Send it to the print team",
+ * "what's in it for the team?". The handoff wrote it as the owner's first
+ * name; with a team rather than one owner, a role name is the honest form.
  *
  * Only ever rendered behind a session. Unauthenticated pages stay generic
  * rather than telling a stranger who runs the printer.
  */
-export const printerName = cache(async (): Promise<string> => {
-  const admin = await printerOwner();
-  return admin?.name.trim().split(/\s+/)[0] ?? "the printer owner";
-});
+export const printerName = cache(async (): Promise<string> => "the print team");
 
 export async function notify(opts: {
   recipientId: string;
@@ -146,6 +172,29 @@ export async function notify(opts: {
       featureId: opts.featureId ?? null,
       text: opts.text,
     },
+  });
+}
+
+/**
+ * Tell the whole print team — everyone who can work the ticket — skipping the
+ * actor when they are on the team themselves (their own action is the source,
+ * not news). A user's action reaches everyone on the team.
+ */
+export async function notifyTeam(
+  actor: Actor,
+  text: string,
+  refs: { storyId?: number; featureId?: number } = {},
+): Promise<void> {
+  const team = await printTeam();
+  const targets = team.filter((m) => m.id !== actor.id);
+  if (targets.length === 0) return;
+  await db.notification.createMany({
+    data: targets.map((m) => ({
+      recipientId: m.id,
+      storyId: refs.storyId ?? null,
+      featureId: refs.featureId ?? null,
+      text,
+    })),
   });
 }
 

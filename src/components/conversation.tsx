@@ -1,7 +1,7 @@
 import { addComment } from "@/app/actions/comments";
 import { relativeTime } from "@/lib/catalog";
 
-type Author = { id: string; name: string; initials: string; role: "client" | "admin" };
+type Author = { id: string; name: string; initials: string; role: "admin" | "manager" | "user" };
 export type ThreadComment = {
   id: string;
   body: string;
@@ -28,7 +28,7 @@ export function Conversation({
 }: {
   storyId: number;
   comments: ThreadComment[];
-  viewerRole: "client" | "admin";
+  viewerRole: "admin" | "manager" | "user";
   ownerName: string;
 }) {
   return (

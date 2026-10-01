@@ -54,14 +54,14 @@ export const SESSION_IDLE_SECONDS = 60 * 20;
 /**
  * The session cookie, under both the names it can have.
  *
- * `advanced.cookiePrefix` makes it `ppp.session_token`, and Better Auth adds
+ * `advanced.cookiePrefix` makes it `printq.session_token`, and Better Auth adds
  * the `__Secure-` prefix wherever the deployment is served over HTTPS. Which
  * one is live depends on the URL rather than on `NODE_ENV`, so anything
  * looking for the cookie by name has to accept either.
  */
 export const SESSION_COOKIE_NAMES = [
-  "__Secure-ppp.session_token",
-  "ppp.session_token",
+  "__Secure-printq.session_token",
+  "printq.session_token",
 ] as const;
 
 /**

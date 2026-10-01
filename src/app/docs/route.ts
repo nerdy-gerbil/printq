@@ -91,7 +91,7 @@ export async function GET() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>API · Pretty Please Print</title>
+<title>API · PrintQ - Requests</title>
 <link rel="icon" href="/icon.svg">
 <link rel="stylesheet" href="/docs/swagger-ui.css">
 <!-- A file, not an inline block: \`style-src 'self'\` drops the latter, and the
@@ -100,7 +100,7 @@ export async function GET() {
 </head>
 <body>
 <header class="console-head">
-  <h1>Pretty Please Print — API</h1>
+  <h1>PrintQ - Requests — API</h1>
   <p>
     You are signed in as <strong>${escapeHtml(user.name)}</strong> (${user.role}), and
     <em>Try it out</em> already carries that session — there is nothing to paste.

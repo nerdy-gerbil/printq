@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { db } from "@/lib/db";
 import { nextStatus, storyRef } from "@/lib/scope";
-import { printerName, requireAdmin } from "@/lib/authz";
+import { printerName, requireManager } from "@/lib/authz";
 import { formatBytes } from "@/lib/models";
 import { quantityText, relativeTime } from "@/lib/catalog";
 import { AppHeader } from "@/components/app-header";
@@ -13,7 +13,7 @@ import { Toast } from "@/components/toast";
 export const dynamic = "force-dynamic";
 
 /**
- * The pass — the printer owner's home. Handoff §5.
+ * The pass — the print team's home. Handoff §5, widened to the team.
  *
  * Two halves, because they answer different questions. "Waiting on you" is
  * the only part that needs a decision, so it comes first, is the loudest
@@ -21,15 +21,15 @@ export const dynamic = "force-dynamic";
  * already accepted is a list you scan rather than act on, with one button
  * each to move it along.
  *
- * Admin-only: `requireAdmin` answers 404, so a client learns nothing about
- * whether this route exists.
+ * Team-only (admin or manager): `requireManager` answers 404, so a user
+ * learns nothing about whether this route exists.
  */
 export default async function QueuePage({
   searchParams,
 }: {
   searchParams: Promise<{ toast?: string; error?: string }>;
 }) {
-  const [{ toast, error }, admin] = await Promise.all([searchParams, requireAdmin()]);
+  const [{ toast, error }, admin] = await Promise.all([searchParams, requireManager()]);
   const owner = await printerName();
 
   const stories = await db.story.findMany({

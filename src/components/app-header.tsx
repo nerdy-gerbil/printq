@@ -16,26 +16,32 @@ import { PasskeyNudge } from "@/components/passkey-nudge";
  * they assert on "there is a signed-in shell here" rather than on a piece of
  * copy that a redesign can move — which is exactly what went wrong before.
  */
+const USER_NAV: Array<{ label: string; href: string }> = [
+  { label: "The rail", href: "/board" },
+  { label: "Order up", href: "/upload" },
+  { label: "My orders", href: "/me" },
+  { label: "History", href: "/history" },
+  { label: "Feature requests", href: "/frr" },
+];
+
+const TEAM_NAV: Array<{ label: string; href: string }> = [
+  { label: "The pass", href: "/queue" },
+  ...USER_NAV,
+];
+
+const ADMIN_NAV: Array<{ label: string; href: string }> = [
+  ...TEAM_NAV,
+  // The board, not the triage queue: the team wants to see everything that
+  // has been asked for, and triage is one button away on that page.
+  { label: "Benefits", href: "/admin/benefits" },
+  { label: "Guest list", href: "/admin/invites" },
+  { label: "Audit", href: "/admin/audit" },
+];
+
 const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {
-  client: [
-    { label: "The rail", href: "/board" },
-    { label: "Order up", href: "/upload" },
-    { label: "My orders", href: "/me" },
-    { label: "History", href: "/history" },
-    { label: "Feature requests", href: "/frr" },
-  ],
-  admin: [
-    { label: "The pass", href: "/queue" },
-    { label: "The rail", href: "/board" },
-    { label: "The books", href: "/me" },
-    { label: "History", href: "/history" },
-    // The board, not the triage queue: the owner wants to see everything that
-    // has been asked for, and triage is one button away on that page.
-    { label: "Feature requests", href: "/frr" },
-    { label: "Benefits", href: "/admin/benefits" },
-    { label: "Guest list", href: "/admin/invites" },
-    { label: "Audit", href: "/admin/audit" },
-  ],
+  user: USER_NAV,
+  manager: TEAM_NAV,
+  admin: ADMIN_NAV,
 };
 
 export async function AppHeader({
@@ -74,7 +80,7 @@ export async function AppHeader({
             account cluster is pushed right with `ml-auto` rather than a
             flex-1 spacer, which was what scattered the wrapped layout. */}
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-[16px] gap-y-[11px] px-[16px] py-[11px] sm:px-[26.4px] sm:py-[13.2px] lg:gap-x-[22px]">
-          <Link href={user.role === "admin" ? "/queue" : "/board"} aria-label="Pretty Please Print, home">
+          <Link href={user.role === "admin" ? "/queue" : "/board"} aria-label="PrintQ - Requests, home">
             {/* On the dark bar the script reads cream, not cherry. */}
             <span className="[&_span]:text-cream">
               <Brand size={34} />

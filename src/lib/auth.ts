@@ -63,7 +63,7 @@ if (isProd && !isBuildPhase) {
 }
 
 export const auth = betterAuth({
-  appName: "Pretty Please Print",
+  appName: "PrintQ - Requests",
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: prismaAdapter(db, { provider: "postgresql" }),
@@ -179,7 +179,7 @@ export const auth = betterAuth({
   },
 
   advanced: {
-    cookiePrefix: "ppp",
+    cookiePrefix: "printq",
     useSecureCookies: isHttps,
     defaultCookieAttributes: {
       httpOnly: true,
@@ -221,7 +221,7 @@ export const auth = betterAuth({
       // `role: "admin"` at sign-up. They are set server-side in the
       // `user.create.before` hook below, from the invite row.
       initials: { type: "string", required: false, input: false },
-      role: { type: "string", required: false, input: false, defaultValue: "client" },
+      role: { type: "string", required: false, input: false, defaultValue: "user" },
       invitedById: { type: "string", required: false, input: false },
     },
 
@@ -250,7 +250,7 @@ export const auth = betterAuth({
         return {
           error: "invite_required",
           errorDescription:
-            "Pretty Please Print is invite-only. Ask the printer owner for a link.",
+            "PrintQ - Requests is invite-only. Ask the print team for a link.",
         };
       }
     },
@@ -274,7 +274,7 @@ export const auth = betterAuth({
               email,
               name,
               initials: initialsFor(name),
-              role: invite?.role ?? "client",
+              role: invite?.role ?? "user",
               invitedById: invite?.invitedById ?? null,
               // Registration only happens off a link sent to this address,
               // so the address is verified by construction.
@@ -362,7 +362,7 @@ export const auth = betterAuth({
 
     passkey({
       rpID: process.env.PASSKEY_RP_ID ?? "localhost",
-      rpName: process.env.PASSKEY_RP_NAME ?? "Pretty Please Print",
+      rpName: process.env.PASSKEY_RP_NAME ?? "PrintQ - Requests",
       origin: baseURL,
       authenticatorSelection: {
         // Discoverable credentials let someone sign in without typing a
@@ -374,7 +374,7 @@ export const auth = betterAuth({
     }),
 
     admin({
-      defaultRole: "client",
+      defaultRole: "user",
       adminRoles: ["admin"],
     }),
 

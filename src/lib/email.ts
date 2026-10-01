@@ -43,7 +43,7 @@ if (!isBuildPhase && process.env.NODE_ENV === "production" && !mailConfigured())
   );
 }
 
-const from = process.env.MAIL_FROM ?? "Pretty Please Print <printer@example.org>";
+const from = process.env.MAIL_FROM ?? "PrintQ - Requests <printer@example.org>";
 
 export type Mail = { to: string; subject: string; html: string; text: string };
 
@@ -152,7 +152,7 @@ function shell(banner: string, body: string): string {
 
       <tr><td style="padding-top:20px;font-family:${SANS};font-size:12px;line-height:1.6;color:${INK_2}">
         You are getting this because someone at the office runs a 3D printer and
-        uses Pretty Please Print to keep track of who asked for what. If none of
+        uses PrintQ - Requests to keep track of who asked for what. If none of
         that means anything to you, ignore this — nothing happens without the
         link above.
       </td></tr>
@@ -173,14 +173,14 @@ export function inviteEmail(opts: {
     to: opts.to,
     subject: `${opts.inviterName} is offering to print things for you`,
     text:
-      `${opts.inviterName} added you to Pretty Please Print — drop an .stl or .3mf and it goes up on the rail as a ticket.\n\n` +
+      `${opts.inviterName} added you to PrintQ - Requests — drop an .stl or .3mf and it goes up on the rail as a ticket.\n\n` +
       `Claim your seat: ${opts.url}\n\n` +
       `The link works once and expires in ${opts.expiresInDays} days.`,
     html: shell(
       "YOUR TABLE IS READY",
       `<h1 style="margin:0 0 14px;font-family:${SLAB};font-size:29px;line-height:1.1;color:${INK}">You&rsquo;ve been handed a 3D printer</h1>
        <p style="margin:0 0 20px">
-         <strong>${esc(opts.inviterName)}</strong> added you to Pretty Please Print.
+         <strong>${esc(opts.inviterName)}</strong> added you to PrintQ - Requests.
          Drop an <span style="font-family:${MONO}">.stl</span> or
          <span style="font-family:${MONO}">.3mf</span>, say what you&rsquo;re hoping
          for, and it goes up on the rail as a ticket you can follow.
@@ -203,7 +203,7 @@ export function passwordResetEmail(opts: {
     to: opts.to,
     subject: "Set a new password",
     text:
-      `Someone with the keys to the printer reset your Pretty Please Print password.\n\n` +
+      `Someone with the keys to the printer reset your PrintQ - Requests password.\n\n` +
       `Choose a new one: ${opts.url}\n\n` +
       `The link works once and expires in ${opts.expiresInMinutes} minutes. ` +
       `It does not sign you in — you pick a password, then use it. ` +

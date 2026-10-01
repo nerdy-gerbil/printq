@@ -20,7 +20,8 @@ datasource db {
 // ===========================================================================
 
 enum Role {
-  client
+  user
+  manager
   admin
 }
 
@@ -39,9 +40,9 @@ model User {
   /// the unique index case-insensitive; `displayUsername` keeps whatever was
   /// typed so the profile can show it back.
   ///
-  /// Nullable because an account can exist before it has one: the seeded admin
-  /// is a row written straight through Prisma, and picks a username and a
-  /// password from the set-password link the seed prints.
+  /// Nullable because an account can exist before it has one: the first
+  /// admin is created through the first-run /setup page, and picks a username
+  /// and a password there.
   username        String? @unique
   displayUsername String?
 
@@ -49,11 +50,13 @@ model User {
   /// a safety net only — `databaseHooks.user.create.before` always sets it.
   initials String @default("??")
 
-  /// Exactly one `admin` exists; enforced by the partial unique index
-  /// `user_single_admin`, added in the enforce_single_admin migration.
-  role Role @default(client)
+  /// The access level. `user` files requests, `manager` works the print
+  /// queue alongside admins, and `admin` additionally runs the admin surface
+  /// (invites, members, materials, rates, audit, wishlist). There is no
+  /// single-admin constraint: any number of admins is allowed.
+  role Role @default(user)
 
-  /// Who invited this user. Null for the seeded admin only.
+  /// Who invited this user. Null for the first admin from /setup.
   invitedById  String?
   invitedBy    User?   @relation("Invitations", fields: [invitedById], references: [id], onDelete: SetNull)
   invitedUsers User[]  @relation("Invitations")
@@ -76,6 +79,8 @@ model User {
   /// The 'frr' feature-request track — a parallel backlog to the print one.
   featureRequests FeatureRequest[]
   featureComments FeatureComment[]
+
+  wishlistItems WishlistItem[]
 
   @@index([role])
   @@map("user")
@@ -107,8 +112,8 @@ model Account {
   /// internal method. Better Auth writes `local:credential` for a password
   /// account; an OAuth provider would get its own issuer. Required by the
   /// library, and the left half of the uniqueness rule below.
-  issuer     String
-  providerId String
+  issuer                String
+  providerId            String
   userId                String
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?
@@ -194,7 +199,7 @@ model Invite {
 
   /// Display name the admin suggested; the invitee can override it on claim.
   name String?
-  role Role    @default(client)
+  role Role    @default(user)
 
   invitedById String
   invitedBy   User   @relation("InviteAuthor", fields: [invitedById], references: [id], onDelete: Cascade)
@@ -251,15 +256,8 @@ enum StoryStatus {
   Declined
 }
 
-enum Material {
-  PLA
-  PETG
-  TPU
-  Resin
-}
-
 model Story {
-  /// Autoincrement so the display ref stays "PPP-" + (100 + id).
+  /// Autoincrement so the display ref stays "PrintQ-" + (100 + id).
   id     Int         @id @default(autoincrement())
   title  String
   status StoryStatus @default(Requested)
@@ -267,12 +265,29 @@ model Story {
   uploaderId String
   uploader   User   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
 
-  quantity  Int      @default(1)
-  material  Material @default(PETG)
+  quantity  Int    @default(1)
+  /// Plain string, not an enum — materials are owner-managed data (see the
+  /// Material model and src/lib/materials.ts), mirroring how Benefit handles
+  /// the tip catalogue. A retired material is kept exactly like a retired
+  /// benefit: past tickets that used it still read correctly, it just drops
+  /// off the upload form's choices.
+  material  String @default("PETG")
   colorName String
   colorHex  String
+
+  /// Extra colours for a multi-colour print (AMS/MMU/manual filament swap),
+  /// beyond the primary colorName/colorHex above. Plain array of catalogue
+  /// names — short (capped at 3 extra), never queried on its own, and a join
+  /// table would only earn its keep past that scale.
+  additionalColorNames String[] @default([])
+
+  /// Where the model came from, if not made by the requester — a Makeronline,
+  /// Printables, MakerWorld or Thingiverse URL, say. No fetching happens
+  /// against it at upload time; this is a reference link on the ticket so the
+  /// print team can open the source page themselves. Optional.
+  sourceUrl String?
   tip       String
-  note      String   @default("")
+  note      String  @default("")
 
   /// Free-text print settings the requester optionally notes (layer height,
   /// infill, supports, temps…), shown to the owner on the ticket so specifics
@@ -296,6 +311,15 @@ model Story {
   // definition of done rules out claiming to know what the printer will do.
   // A real slicer integration would add one back — see src/lib/models.ts.
   dims String?
+
+  /// Actual filament used, in grams — entered by the print team once known
+  /// (weighed, or read off the slicer after the real print), never guessed
+  /// at upload time. Cost is derived from this plus printMinutes and the
+  /// current MaterialRate — see src/lib/cost.ts.
+  weightGrams  Int?
+  /// Actual wall-clock print time in minutes, entered the same way as
+  /// weightGrams. Deliberately not an estimate at any point in the flow.
+  printMinutes Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -322,22 +346,89 @@ model Comment {
 }
 
 model Notification {
-  id          String   @id @default(cuid())
+  id          String          @id @default(cuid())
   recipientId String
-  recipient   User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  recipient   User            @relation(fields: [recipientId], references: [id], onDelete: Cascade)
   storyId     Int?
-  story       Story?   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  story       Story?          @relation(fields: [storyId], references: [id], onDelete: Cascade)
   /// A notification points at a print story OR a feature request (or neither,
   /// for a withdrawal). The two id columns are mutually exclusive in practice;
   /// the Activity feed routes to /story or /frr on whichever is set.
   featureId   Int?
   feature     FeatureRequest? @relation(fields: [featureId], references: [id], onDelete: Cascade)
   text        String
-  read        Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  read        Boolean         @default(false)
+  createdAt   DateTime        @default(now())
 
   @@index([recipientId, read])
   @@map("notification")
+}
+
+// ===========================================================================
+// Materials — owner-managed, like the tip catalogue
+// ===========================================================================
+
+model Material {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@map("material")
+}
+
+/// Owner-managed $/kg by material — an input of the cost calculator
+/// (src/lib/cost.ts). `material` is a plain string, not a foreign key to
+/// Material.name: a rate for a since-retired or since-renamed material keeps
+/// working rather than cascade-deleting, the same reason Story.material is a
+/// plain string.
+model MaterialRate {
+  material     String   @id
+  dollarsPerKg Float
+  updatedAt    DateTime @updatedAt
+
+  @@map("material_rate")
+}
+
+/// The single shared hourly machine rate (electricity, wear, amortised
+/// upkeep). One row, id fixed at "default".
+model MachineRate {
+  id             String   @id @default("default")
+  dollarsPerHour Float
+  updatedAt      DateTime @updatedAt
+
+  @@map("machine_rate")
+}
+
+// ===========================================================================
+// Wishlist — models the admins would like to print some day
+// ===========================================================================
+
+/// A link to a 3D model somebody would like printed later, when there is
+/// time, filament or a reason. The page's title and thumbnail are fetched at
+/// save time (src/lib/wishlist.ts); the bytes of the thumbnail are cached
+/// under MODELS_ROOT/thumbs and served through /api/wishlist/[id]/thumb so
+/// the CSP's img-src stays 'self'. Nothing is ever fetched from the URL on
+/// behalf of a viewer afterwards — the row is the snapshot.
+model WishlistItem {
+  id           String   @id @default(cuid())
+  url          String   @unique
+  title        String
+  /// Storage key of the cached thumbnail, or null when none could be fetched.
+  thumbnailKey String?
+  /// Source label, e.g. "Makeronline" — see src/lib/model-sources.ts.
+  source       String
+  note         String   @default("")
+  addedById    String
+  addedBy      User     @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([createdAt])
+  @@map("wishlistItem")
 }
 
 // ===========================================================================

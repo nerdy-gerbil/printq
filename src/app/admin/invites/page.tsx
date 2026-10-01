@@ -10,6 +10,7 @@ import { Kicker, StatusChip } from "@/components/ui";
 import { InviteForm } from "./invite-form";
 import { ResetPassword } from "@/components/reset-password";
 import { MemberAccess } from "@/components/member-access";
+import { MemberRole } from "@/components/member-role";
 import { resendInviteAction, revokeInviteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -60,9 +61,9 @@ export default async function InvitesPage() {
       include: { invitedBy: { select: { name: true } } },
     }),
     db.user.findMany({
-      where: { role: "client" },
+      where: { role: { in: ["user", "manager"] } },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, email: true, initials: true, banned: true },
+      select: { id: true, name: true, email: true, initials: true, banned: true, role: true },
     }),
   ]);
   const members = memberList.length;
@@ -109,6 +110,11 @@ export default async function InvitesPage() {
                   <div className="min-w-[180px] flex-[1_1_240px]">
                     <p className="m-0 font-display text-[17px] text-ink">
                       {m.name}
+                      {m.role === "manager" && (
+                        <span className="ml-[8px] rounded-chip border-2 border-ink bg-aqua px-[8px] py-[1px] font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink">
+                          Manager
+                        </span>
+                      )}
                       {m.banned && (
                         <span className="ml-[8px] rounded-chip border-2 border-ink bg-cream-3 px-[8px] py-[1px] font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-ink-2">
                           Suspended
@@ -123,6 +129,7 @@ export default async function InvitesPage() {
                       name={m.name.split(" ")[0] ?? m.name}
                       expiresInMinutes={RESET_TTL_MINUTES}
                     />
+                    <MemberRole userId={m.id} role={m.role} self={m.id === admin.id} />
                     <MemberAccess
                       userId={m.id}
                       name={m.name.split(" ")[0] ?? m.name}

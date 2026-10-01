@@ -15,7 +15,7 @@ import "./_env";
 import { existsSync } from "node:fs";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { db } from "../src/lib/db";
-import { TEST_PASSWORD, ensureCredentials } from "./_accounts";
+import { ensureAdmin, TEST_PASSWORD, ensureCredentials } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 /**
@@ -58,13 +58,12 @@ async function main() {
   if (!CHROME) throw new Error("No Chrome or Chromium found. Set CHROME_PATH.");
   console.info(`\n── browser ──\n  using ${CHROME}`);
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
-  if (!admin) throw new Error("No admin — run npm run db:seed");
+  const admin = await ensureAdmin(APP);
 
   const email = "passkey@office.example";
   await db.user.deleteMany({ where: { email } });
   const user = await db.user.create({
-    data: { email, name: "Petra Keys", initials: "PE", role: "client",
+    data: { email, name: "Petra Keys", initials: "PE", role: "user",
             emailVerified: true, invitedById: admin.id },
   });
 

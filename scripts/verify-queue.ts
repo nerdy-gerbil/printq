@@ -13,7 +13,7 @@ import "./_env";
 import { db } from "../src/lib/db";
 import { clientIpFrom, ipSource } from "../src/lib/client-ip";
 import { BOARD, nextStatus, storyRef as storyRefOf } from "../src/lib/scope";
-import { ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
+import { ensureAdmin, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 
 const APP = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 
@@ -138,13 +138,13 @@ async function main() {
   await db.verification.deleteMany();
   await db.session.deleteMany();
   await db.invite.deleteMany();
-  await db.user.deleteMany({ where: { role: "client" } });
+  await db.user.deleteMany({ where: { role: "user" } });
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
+  const admin = await ensureAdmin(APP);
   if (!admin) throw new Error("No admin — run npm run db:seed");
   const ayla = await db.user.create({
     data: { email: "ayla@office.example", name: "Ayla Berg", initials: "AY",
-            role: "client", emailVerified: true, invitedById: admin.id },
+            role: "user", emailVerified: true, invitedById: admin.id },
   });
 
   const ruben = await signIn(admin);
@@ -351,7 +351,7 @@ async function main() {
   // Someone else's ticket is not a place to talk.
   const mallory = await db.user.create({
     data: { email: "mallory@office.example", name: "Mallory Vance", initials: "MA",
-            role: "client", emailVerified: true, invitedById: admin.id },
+            role: "user", emailVerified: true, invitedById: admin.id },
   });
   const other = await signIn(mallory);
   const trespass = new FormData();
@@ -415,7 +415,7 @@ async function main() {
 
   const goner = await db.user.create({
     data: { email: "goner@office.example", name: "Gwen Oner", initials: "GW",
-            role: "client", emailVerified: true, invitedById: admin.id },
+            role: "user", emailVerified: true, invitedById: admin.id },
   });
   const gonerB = await signIn(goner);
   check("the member can reach the app",

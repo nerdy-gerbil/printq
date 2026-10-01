@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { safeRedirectPath } from "@/lib/safe-redirect";
 
-import { requireAdmin, requireUser } from "@/lib/authz";
+import { requireManager, requireUser } from "@/lib/authz";
 import {
   FeatureProblem,
   addFeatureComment as postComment,
@@ -66,17 +66,17 @@ async function ownerStep(
 }
 
 export async function advanceFeature(formData: FormData): Promise<void> {
-  const admin = await requireAdmin();
+  const team = await requireManager();
   await ownerStep(formData, async (id) => {
-    const done = await advance(admin, id);
+    const done = await advance(team, id);
     return { toast: `“${done.title}” → ${done.to === "InProgress" ? "In progress" : done.to} · ${done.requesterName} notified` };
   });
 }
 
 export async function declineFeature(formData: FormData): Promise<void> {
-  const admin = await requireAdmin();
+  const team = await requireManager();
   await ownerStep(formData, async (id) => {
-    const done = await decline(admin, id);
+    const done = await decline(team, id);
     return { toast: `Declined · ${done.requesterName} notified` };
   });
 }

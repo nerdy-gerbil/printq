@@ -85,8 +85,8 @@ const STORY_SCHEMA = {
     id: { type: "integer", examples: [4] },
     ref: {
       type: "string",
-      description: "The display reference, `PPP-` + (100 + id). What people paste into chat.",
-      examples: ["PPP-104"],
+      description: "The display reference, `PrintQ-` + (100 + id). What people paste into chat.",
+      examples: ["PrintQ-104"],
     },
     title: { type: "string", examples: ["Cable clip"] },
     status: { type: "string", enum: [...FLOW, "Declined"] },
@@ -145,7 +145,7 @@ const COMMENT_SCHEMA = {
   properties: {
     id: { type: "string" },
     storyId: { type: "integer" },
-    ref: { type: "string", examples: ["PPP-104"] },
+    ref: { type: "string", examples: ["PrintQ-104"] },
     body: { type: "string" },
     author: {
       type: "object",
@@ -153,7 +153,7 @@ const COMMENT_SCHEMA = {
         id: { type: "string" },
         name: { type: "string" },
         initials: { type: "string" },
-        role: { type: "string", enum: ["client", "admin"] },
+        role: { type: "string", enum: ["user", "manager", "admin"] },
       },
     },
     createdAt: { type: "string", format: "date-time" },
@@ -179,7 +179,7 @@ const storyIdParam = {
   name: "id",
   in: "path",
   required: true,
-  description: "The numeric story id — `4`, not `PPP-104`.",
+  description: "The numeric story id — `4`, not `PrintQ-104`.",
   schema: { type: "integer", minimum: 1 },
 } as const;
 
@@ -264,7 +264,7 @@ export async function buildOpenApiDocument() {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Pretty Please Print",
+      title: "PrintQ - Requests",
       version: process.env.PPP_TAG ?? "0.1.0",
       description:
         "The HTTP surface of one office's 3D-print queue.\n\n" +
@@ -798,7 +798,7 @@ export async function buildOpenApiDocument() {
                     type: "object",
                     properties: {
                       id: { type: "integer" },
-                      ref: { type: "string", examples: ["PPP-104"] },
+                      ref: { type: "string", examples: ["PrintQ-104"] },
                       title: { type: "string" },
                       dims: { type: ["string", "null"] },
                     },

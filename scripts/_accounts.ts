@@ -76,7 +76,46 @@ export function signInWithPassword(
   });
 }
 
-/** A username from an address: `ayla@office.example` -> `ayla`. */
+/**
+ * A username from an address: `ayla@office.example` -> `ayla`.
+ */
 export function usernameFor(email: string): string {
   return email.split("@")[0]!.toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+}
+
+/**
+ * The suite's administrator, bootstrapped if the database has none.
+ *
+ * The app no longer seeds an admin (the first one arrives through the
+ * first-run /setup page), so the suites own one: a row with the admin role —
+ * created straight through Prisma, exactly the way /setup does it — plus a
+ * username and a password via `ensureCredentials`. Idempotent; safe to call
+ * from every suite's reset block.
+ */
+export async function ensureAdmin(
+  app: string,
+  email = "ruben@office.example",
+  name = "Ruben Haas",
+): Promise<{ id: string; email: string; name: string }> {
+  const existing = await db.user.findFirst({ where: { role: "admin" } });
+  if (existing) {
+    return { id: existing.id, email: existing.email, name: existing.name };
+  }
+
+  const created = await db.user.create({
+    data: {
+      email,
+      name,
+      initials: name
+        .trim()
+        .split(/\s+/)[0]!
+        .slice(0, 2)
+        .toUpperCase(),
+      role: "admin",
+      emailVerified: true,
+      invitedById: null,
+    },
+  });
+  await ensureCredentials(app, created.id, usernameFor(email));
+  return { id: created.id, email: created.email, name: created.name };
 }

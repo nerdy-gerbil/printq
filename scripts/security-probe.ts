@@ -15,7 +15,7 @@
 import "./_env";
 import { db } from "../src/lib/db";
 import { issuePasswordSetupUrl } from "../src/lib/password-reset";
-import { TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
+import { ensureAdmin, TEST_PASSWORD, ensureCredentials, signInWithPassword, usernameFor } from "./_accounts";
 import { SESSION_IDLE_SECONDS } from "../src/lib/auth-rules";
 import { safeRedirect } from "../src/lib/safe-redirect";
 
@@ -167,21 +167,21 @@ async function main() {
   await db.notification.deleteMany();
   await db.story.deleteMany();
   await db.invite.deleteMany();
-  await db.user.deleteMany({ where: { role: "client" } });
+  await db.user.deleteMany({ where: { role: "user" } });
 
-  const admin = await db.user.findFirst({ where: { role: "admin" } });
+  const admin = await ensureAdmin(APP);
   if (!admin) throw new Error("No admin — run npm run db:seed");
 
   const ayla = await db.user.create({
     data: {
       email: "ayla@office.example", name: "Ayla Berg", initials: "AY",
-      role: "client", emailVerified: true, invitedById: admin.id,
+      role: "user", emailVerified: true, invitedById: admin.id,
     },
   });
   const mallory = await db.user.create({
     data: {
       email: "mallory@office.example", name: "Mallory", initials: "MA",
-      role: "client", emailVerified: true, invitedById: admin.id,
+      role: "user", emailVerified: true, invitedById: admin.id,
     },
   });
   console.info(`  admin=${admin.email}  client=${ayla.email}  attacker=${mallory.email}`);
@@ -257,11 +257,11 @@ async function main() {
     ["list-sessions", "/api/auth/admin/list-user-sessions", { userId: "x" }],
     ["revoke-sessions", "/api/auth/admin/revoke-user-sessions", { userId: "x" }],
   ] as const) {
-    for (const [who, browser] of [["client", client], ["admin", ownerNow]] as const) {
+    for (const [who, browser] of [["user", client], ["admin", ownerNow]] as const) {
       const res = body
         ? await browser.json(path, { ...body, userId: ayla.id })
         : await browser.raw(APP + path, { headers: browser.headers() });
-      probe(`A01-${name}-${who}`, `admin API "${name}" does not exist for ${who === "admin" ? "an admin" : "a client"}`,
+      probe(`A01-${name}-${who}`, `admin API "${name}" does not exist for ${who === "admin" ? "an admin" : "a user"}`,
             res.status === 404,
             `expected 404, got ${res.status}: ${(await res.text()).slice(0, 90)}`);
     }
@@ -279,7 +279,7 @@ async function main() {
 
   const escalated = await db.user.findUnique({ where: { id: ayla.id } });
   probe("A01-role", "client role unchanged after escalation attempts",
-        escalated?.role === "client", `role is now ${escalated?.role}`);
+        escalated?.role === "user", `role is now ${escalated?.role}`);
   probe("A01-backdoor", "no back-door account was created",
         (await db.user.count({ where: { email: "backdoor@nowhere.test" } })) === 0);
 
@@ -295,7 +295,7 @@ async function main() {
   // Imported from scope.ts, not authz.ts: the pure rule, no "server-only".
   const { storyScope } = await import("../src/lib/scope");
   const asMallory = await db.story.findFirst({
-    where: { AND: [{ id: aylaStory.id }, storyScope({ ...mallory, role: "client" } as never)] },
+    where: { AND: [{ id: aylaStory.id }, storyScope({ ...mallory, role: "user" } as never)] },
   });
   probe("A01-idor", "storyScope hides another client's story", asMallory === null,
         "a client can read a story they do not own");
@@ -1108,7 +1108,7 @@ async function main() {
   });
   const created = await db.user.findUnique({ where: { email: "integrity@office.example" } });
   probe("A08-massassign", "privileged fields cannot be set from the request body",
-        created?.role === "client" && created.initials !== "ZZ" &&
+        created?.role === "user" && created.initials !== "ZZ" &&
         created.id !== "chosen-by-attacker" && created.invitedById === admin.id &&
         created.banned !== true,
         JSON.stringify({ role: created?.role, initials: created?.initials,

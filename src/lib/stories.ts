@@ -5,7 +5,7 @@ import type { Prisma, StoryStatus } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { record } from "@/lib/audit";
-import { notify, printerName, printerOwner } from "@/lib/authz";
+import { notify, notifyTeam, printerName, isTeam } from "@/lib/authz";
 import {
   AuthzError,
   FLOW,
@@ -280,15 +280,15 @@ export async function getStory(actor: Actor, id: number): Promise<StoryRow> {
 }
 
 /**
- * The admin's view of a ticket for an action on it.
+ * The print team's view of a ticket for an action on it.
  *
- * Unscoped on purpose — `storyScope` is `{}` for an admin anyway, and going
+ * Unscoped on purpose — `storyScope` is `{}` for the team anyway, and going
  * through it here would suggest the scope is doing work it is not. The role
  * check is the control, and it is the first line.
  */
-async function loadForAdmin(actor: Actor, id: number) {
-  if (actor.role !== "admin") {
-    throw problem(403, "Only the printer owner moves a story along.");
+async function loadForTeam(actor: Actor, id: number) {
+  if (!isTeam(actor)) {
+    throw problem(403, "Only the print team moves a story along.");
   }
   const story = await db.story.findUnique({
     where: { id },
@@ -299,7 +299,7 @@ async function loadForAdmin(actor: Actor, id: number) {
 }
 
 // ---------------------------------------------------------------------------
-// The printer owner's actions
+// The print team's actions
 // ---------------------------------------------------------------------------
 
 /**
@@ -308,7 +308,7 @@ async function loadForAdmin(actor: Actor, id: number) {
  * differs, the operation does not.
  */
 export async function advanceStory(actor: Actor, id: number) {
-  const story = await loadForAdmin(actor, id);
+  const story = await loadForTeam(actor, id);
 
   const next = nextStatus(story.status);
   if (!next) throw problem(409, `${story.status} is the end of the line.`);
@@ -349,7 +349,7 @@ export async function advanceStory(actor: Actor, id: number) {
  * owner has said yes, saying no is a conversation, not a state change.
  */
 export async function declineStory(actor: Actor, id: number) {
-  const story = await loadForAdmin(actor, id);
+  const story = await loadForTeam(actor, id);
 
   try {
     assertTransition(actor, story.status, "Declined");
@@ -391,7 +391,7 @@ export async function declineStory(actor: Actor, id: number) {
  * waiting nothing they can act on.
  */
 export async function flagStory(actor: Actor, id: number, rawReason: unknown) {
-  const story = await loadForAdmin(actor, id);
+  const story = await loadForTeam(actor, id);
 
   const parsed = ReasonSchema.safeParse(typeof rawReason === "string" ? rawReason : "");
   if (!parsed.success) {
@@ -434,7 +434,7 @@ export async function flagStory(actor: Actor, id: number, rawReason: unknown) {
  * was fixed. The uploader is told, because they are the one who fixed it.
  */
 export async function clearFlag(actor: Actor, id: number) {
-  const story = await loadForAdmin(actor, id);
+  const story = await loadForTeam(actor, id);
   if (!story.flagged) throw problem(409, "That ticket is not flagged.");
 
   await db.story.update({
@@ -515,7 +515,6 @@ export async function withdrawStory(actor: Actor, id: number) {
   }
 
   const ref = storyRef(story.id);
-  const owner = await printerOwner();
 
   await db.story.delete({ where: { id: story.id } });
 
@@ -528,17 +527,10 @@ export async function withdrawStory(actor: Actor, id: number) {
     console.error(`[withdraw] ${ref}: object ${story.storageKey} not removed`, error);
   }
 
-  // Tell the printer owner when they had it in hand — a request still waiting
-  // on them, or one they had already accepted and were on the hook for.
-  if (
-    owner &&
-    (story.status === "Requested" || story.status === "Accepted") &&
-    owner.id !== actor.id
-  ) {
-    await notify({
-      recipientId: owner.id,
-      text: `${actor.name} withdrew ${ref} — “${story.title}”.`,
-    });
+  // Tell the team when they had it in hand — a request still waiting on
+  // them, or one they had already accepted and were on the hook for.
+  if (story.status === "Requested" || story.status === "Accepted") {
+    await notifyTeam(actor, `${actor.name} withdrew ${ref} — “${story.title}”.`);
   }
 
   await record({
@@ -572,8 +564,8 @@ export async function requeueStory(actor: Actor, id: number) {
     where: { AND: [{ id }, storyScope(actor)] },
     select: {
       id: true, title: true, quantity: true, material: true, colorName: true,
-      colorHex: true, tip: true, note: true, printSettings: true,
-      filename: true, fileSize: true,
+      colorHex: true, additionalColorNames: true, tip: true, note: true,
+      printSettings: true, filename: true, fileSize: true,
       mimeType: true, storageKey: true, dims: true, uploaderId: true,
     },
   });
@@ -601,6 +593,7 @@ export async function requeueStory(actor: Actor, id: number) {
       material: src.material,
       colorName: src.colorName,
       colorHex: src.colorHex,
+      additionalColorNames: src.additionalColorNames,
       tip: src.tip,
       note: src.note,
       printSettings: src.printSettings,
@@ -613,14 +606,9 @@ export async function requeueStory(actor: Actor, id: number) {
     select: { id: true },
   });
 
-  const owner = await printerOwner();
-  if (owner && owner.id !== actor.id) {
-    await notify({
-      recipientId: owner.id,
-      storyId: created.id,
-      text: `${actor.name} re-queued “${src.title}”.`,
-    });
-  }
+  await notifyTeam(actor, `${actor.name} re-queued “${src.title}”.`, {
+    storyId: created.id,
+  });
 
   await record({
     action: "story.requeued",
@@ -693,16 +681,19 @@ export async function addComment(actor: Actor, id: number, rawBody: unknown) {
     select: COMMENT_FIELDS,
   });
 
-  // Whoever is not the author. An admin writing tells the uploader; a client
-  // writing tells the printer owner.
-  const recipientId =
-    actor.role === "admin" ? story.uploaderId : (await printerOwner())?.id;
-
-  if (recipientId && recipientId !== actor.id) {
-    await notify({
-      recipientId,
+  // A team member writing tells the uploader; a user writing tells the whole
+  // team, since any of them may pick the ticket up.
+  if (isTeam(actor)) {
+    if (story.uploaderId !== actor.id) {
+      await notify({
+        recipientId: story.uploaderId,
+        storyId: story.id,
+        text: `${firstName(actor.name)} commented on “${story.title}”.`,
+      });
+    }
+  } else {
+    await notifyTeam(actor, `${firstName(actor.name)} commented on “${story.title}”.`, {
       storyId: story.id,
-      text: `${firstName(actor.name)} commented on “${story.title}”.`,
     });
   }
 

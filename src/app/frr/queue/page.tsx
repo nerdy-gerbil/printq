@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { requireAdmin } from "@/lib/authz";
+import { requireManager } from "@/lib/authz";
 import { featureLabel, featureRef } from "@/lib/scope";
 import { coerceFeatureFilter, listFeatures } from "@/lib/features";
 import { relativeTime, PRIORITY_CHIP, CATEGORY_LABEL } from "@/lib/catalog";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * The owner's triage for feature requests — the print `/queue`'s sibling.
  * "Waiting on you" (still `Requested`) comes first and loudest and vanishes
  * when empty; everything already accepted is a list to scan with one control
- * each. Admin-only: `requireAdmin` answers 404 to a client.
+ * each. Team-only (admin or manager): `requireManager` answers 404 to a user.
  */
 export default async function FeatureQueuePage({
   searchParams,
@@ -29,10 +29,10 @@ export default async function FeatureQueuePage({
     category?: string;
   }>;
 }) {
-  const [params, admin] = await Promise.all([searchParams, requireAdmin()]);
+  const [params, admin] = await Promise.all([searchParams, requireManager()]);
   const { toast, error } = params;
 
-  // The owner sees everyone's, so scope is `{}` — the filter is all the query
+  // The team sees everyone's, so scope is `{}` — the filter is all the query
   // narrows by here. Oldest-first, the order a triage queue wants.
   const filter = coerceFeatureFilter(params);
   const features = await listFeatures(admin, filter, "asc");

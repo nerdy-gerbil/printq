@@ -26,9 +26,11 @@ import { SESSION_COOKIE_NAMES, SESSION_IDLE_SECONDS } from "@/lib/auth-rules";
  * `/set-password` is on the list for the same reason `/invite` is: the whole
  * point of the link is that somebody who cannot get in can use it. It grants
  * nothing on its own — the token is checked by the page and again by the
- * action behind it.
+ * action behind it. `/setup` is the first-run bootstrap; the page refuses
+ * with a redirect the moment an admin exists, so the window is exactly
+ * "before the printer has an owner".
  */
-const PUBLIC_PREFIXES = ["/signin", "/invite", "/set-password"];
+const PUBLIC_PREFIXES = ["/signin", "/invite", "/set-password", "/setup"];
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -128,7 +130,7 @@ export function middleware(request: NextRequest) {
   // /api/upload comes back 401.
   const isApi = pathname.startsWith("/api/");
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
-  const hasCookie = getSessionCookie(request, { cookiePrefix: "ppp" });
+  const hasCookie = getSessionCookie(request, { cookiePrefix: "printq" });
 
   if (isApi || isPublic || hasCookie) {
     const res = withCsp(NextResponse.next({ request: { headers: requestHeaders } }));
