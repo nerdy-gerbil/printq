@@ -2,7 +2,7 @@ import { storyRef } from "@/lib/scope";
 import { mintSlicerToken } from "@/lib/slicer-token";
 
 /**
- * "Open in PrusaSlicer" — a link to the `ppp://` scheme a helper on the
+ * "Open in PrusaSlicer" — a link to the `printq://` scheme a helper on the
  * viewer's own machine handles.
  *
  * Why a bare `<a>` to a custom scheme rather than a download, a signed URL, or
@@ -60,7 +60,7 @@ export function OpenInSlicer({
 
       <div className="mt-[8.8px] rounded-card border-[3px] border-ink bg-cream-2 p-[13.2px]">
         <a
-          href={`ppp://slice/${storyId}?t=${token}`}
+          href={`printq://slice/${storyId}?t=${token}`}
           className="stamp inline-block cursor-pointer rounded-chip border-[3px] border-ink bg-cherry-dk px-[18px] py-[8px] text-[14px] font-bold text-cream hover:bg-cherry"
         >
           Send {storyRef(storyId)} to the slicer

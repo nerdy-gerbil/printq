@@ -428,10 +428,10 @@ async function main() {
   // long after the credential has done its job — which would test nothing.
   const realStory = spoofed!;
   const ticket = await (await apiAdmin.raw(APP + `/story/${realStory.id}`)).text();
-  const minted = /ppp:\/\/slice\/\d+\?t=([A-Za-z0-9._-]+)/.exec(ticket)?.[1] ?? "";
+  const minted = /printq:\/\/slice\/\d+\?t=([A-Za-z0-9._-]+)/.exec(ticket)?.[1] ?? "";
   probe("A05-slicer-minted", "a ticket carries a slicer link with its own credential",
         minted.length > 0,
-        "no ppp:// link with a ?t= credential on the rendered ticket — the " +
+        "no printq:// link with a ?t= credential on the rendered ticket — the " +
         "helper would fall back to a long-lived token on disk");
 
   // Anonymous: no cookie, no bearer, exactly the helper's position.
@@ -602,8 +602,8 @@ async function main() {
         `got ${anonHome.status}`);
 
   const forged = new Browser();
-  forged.jar.set("ppp.session_token", "not-a-real-token");
-  forged.jar.set("__Secure-ppp.session_token", "not-a-real-token");
+  forged.jar.set("printq.session_token", "not-a-real-token");
+  forged.jar.set("__Secure-printq.session_token", "not-a-real-token");
   const forgedRes = await forged.go(`${APP}/`);
   const forgedBody = await forgedRes.text();
   probe("A01-forge", "a forged session cookie grants nothing",
@@ -940,9 +940,9 @@ async function main() {
   await db.$executeRawUnsafe('DELETE FROM "rateLimit"');
   const freshIn = await attemptSignIn(fresh, usernameFor(ayla.email), TEST_PASSWORD);
   const freshCookie =
-    freshIn.headers.getSetCookie().find((c) => c.includes("ppp.session_token=")) ?? "";
+    freshIn.headers.getSetCookie().find((c) => c.includes("printq.session_token=")) ?? "";
   const freshToken = decodeURIComponent(
-    (fresh.jar.get("ppp.session_token") ?? fresh.jar.get("__Secure-ppp.session_token") ?? ""),
+    (fresh.jar.get("printq.session_token") ?? fresh.jar.get("__Secure-printq.session_token") ?? ""),
   ).split(".")[0];
 
   const freshRow = await db.session.findFirst({
@@ -982,7 +982,7 @@ async function main() {
   const nav = await fresh.raw(`${APP}/board`);
   const navMaxAge = Number(
     /max-age=(\d+)/i.exec(
-      nav.headers.getSetCookie().find((c) => c.includes("ppp.session_token=")) ?? "",
+      nav.headers.getSetCookie().find((c) => c.includes("printq.session_token=")) ?? "",
     )?.[1] ?? -1,
   );
   probe("A07-session-slides", "a page render pushes the cookie out too",
@@ -1008,8 +1008,8 @@ async function main() {
   const invitePage = await (await staleAdmin.go(`${APP}/admin/invites`)).text();
 
   const staleToken = decodeURIComponent(
-    (staleAdmin.jar.get("ppp.session_token") ??
-      staleAdmin.jar.get("__Secure-ppp.session_token") ?? ""),
+    (staleAdmin.jar.get("printq.session_token") ??
+      staleAdmin.jar.get("__Secure-printq.session_token") ?? ""),
   ).split(".")[0];
   await db.session.updateMany({
     where: { token: staleToken },
@@ -1071,7 +1071,7 @@ async function main() {
   // The specific token, not every session this user has: earlier probes in
   // this run opened several, and sign-out only ends the one it was called on.
   const revokedToken = decodeURIComponent(
-    (stolen.get("ppp.session_token") ?? stolen.get("__Secure-ppp.session_token") ?? ""),
+    (stolen.get("printq.session_token") ?? stolen.get("__Secure-printq.session_token") ?? ""),
   ).split(".")[0];
   probe("A07-session-row", "the signed-out session row is gone from the database",
         revokedToken.length > 0 &&
