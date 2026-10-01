@@ -815,11 +815,11 @@ async function main() {
         !isAuthenticated(await opened.text()) && linkOnly.jar.size === 0,
         "following a reset link established a session");
 
-  const RESET_TO = "ppp-probe-new-key-parked-outside";
+  const RESET_TO = "printq-probe-new-key-parked-outside";
   const firstUse = await new Browser().json("/api/auth/reset-password",
     { token: setToken, newPassword: RESET_TO });
   const secondUse = await new Browser().json("/api/auth/reset-password",
-    { token: setToken, newPassword: "ppp-probe-third-key-parked-outside" });
+    { token: setToken, newPassword: "printq-probe-third-key-parked-outside" });
   probe("A07-replay", "a set-password link cannot be redeemed twice",
         firstUse.status === 200 && secondUse.status >= 400,
         `first=${firstUse.status} second=${secondUse.status}`);

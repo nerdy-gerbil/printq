@@ -5,6 +5,8 @@ import { nextStatus, storyRef } from "@/lib/scope";
 import { printerName, requireManager } from "@/lib/authz";
 import { formatBytes } from "@/lib/models";
 import { quantityText, relativeTime } from "@/lib/catalog";
+import { deriveCost, formatMoney } from "@/lib/cost";
+import { SourceBadge } from "@/components/source-badge";
 import { AppHeader } from "@/components/app-header";
 import { AdminActions } from "@/components/admin-actions";
 import { Kicker, Notice, StatusChip } from "@/components/ui";
@@ -36,6 +38,20 @@ export default async function QueuePage({
     orderBy: { createdAt: "asc" },
     include: { uploader: { select: { name: true, initials: true } } },
   });
+
+  // Two lookups per page, not two per row: the cost chip on a working ticket
+  // derives from the same current rates the ledger records against.
+  const [materialRates, machine] = await Promise.all([
+    db.materialRate.findMany(),
+    db.machineRate.findUnique({ where: { id: "default" } }),
+  ]);
+  const kgByMaterial = new Map(materialRates.map((r) => [r.material, r.dollarsPerKg]));
+  const machineDollarsPerHour = machine?.dollarsPerHour ?? 0;
+  const costForStory = (s: { material: string; weightGrams: number | null; printMinutes: number | null }) =>
+    deriveCost(s, {
+      dollarsPerKg: kgByMaterial.get(s.material) ?? 0,
+      dollarsPerHour: machineDollarsPerHour,
+    });
 
   const waiting = stories.filter((s) => s.status === "Requested");
   const working = stories.filter(
@@ -89,6 +105,11 @@ export default async function QueuePage({
                       {quantityText(story.quantity)} · {story.material} ·{" "}
                       {story.colorName} · offers {story.tip}
                     </p>
+                    {story.sourceUrl && (
+                      <p className="m-0 mt-[8px]">
+                        <SourceBadge url={story.sourceUrl} />
+                      </p>
+                    )}
                     <p className="m-0 mt-[4px] font-mono text-[11.5px] uppercase tracking-[0.05em] text-ink-3">
                       {story.uploader.name} · {relativeTime(story.createdAt)}
                     </p>
@@ -150,6 +171,18 @@ export default async function QueuePage({
                 <span className="w-[120px] font-mono text-[11px] uppercase tracking-[0.04em] text-ink-3">
                   {story.tip}
                 </span>
+                {(() => {
+                  const cost = costForStory(story);
+                  if (!cost) return null;
+                  return (
+                    <span
+                      className="w-[86px] flex-none font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink-2"
+                      title={`${formatMoney(cost.filament)} filament + ${formatMoney(cost.machine)} machine`}
+                    >
+                      {formatMoney(cost.total)}
+                    </span>
+                  );
+                })()}
                 {nextStatus(story.status) && (
                   <AdminActions
                     storyId={story.id}

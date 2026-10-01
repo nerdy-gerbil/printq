@@ -7,7 +7,7 @@ import {
   COLORS,
   DEFAULT_COLOR,
   DEFAULT_MATERIAL,
-  MATERIALS,
+  MAX_ADDITIONAL_COLORS,
   QUANTITY_PRESETS,
 } from "@/lib/catalog";
 // The same numbers the server enforces. `models.ts` cannot be imported here —
@@ -21,6 +21,8 @@ import {
 
 /** One owner-managed tip option, passed from the server (see upload/page.tsx). */
 type Benefit = { label: string; preferred: boolean };
+/** One owner-managed material, passed from the server (see upload/page.tsx). */
+export type MaterialOption = { name: string };
 import { Button, Label, Notice } from "@/components/ui";
 
 type Phase =
@@ -74,9 +76,11 @@ function Segmented<T extends string | number>({
 export function UploadForm({
   owner,
   benefits,
+  materialNames,
 }: {
   owner: string;
   benefits: Benefit[];
+  materialNames: string[];
 }) {
   // Default to a preferred benefit if the owner has marked one, else the first
   // on the list, else empty (the list is seeded, so empty is only a safety net).
@@ -96,6 +100,9 @@ export function UploadForm({
   const [tip, setTip] = useState<string>(defaultTip);
   const [note, setNote] = useState("");
   const [printSettings, setPrintSettings] = useState("");
+  const [extraColors, setExtraColors] = useState<string[]>([]);
+  const [multi, setMulti] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState("");
 
   /**
    * Client-side checks are for fast feedback only — the server re-runs all of
@@ -142,6 +149,8 @@ export function UploadForm({
     body.set("tip", tip);
     body.set("note", note);
     body.set("printSettings", printSettings);
+    for (const extra of extraColors) body.append("additionalColorNames", extra);
+    body.set("sourceUrl", sourceUrl);
 
     // XHR rather than fetch: it is still the only way to observe upload
     // progress, and a large model over office wifi needs a real bar.
@@ -278,8 +287,8 @@ export function UploadForm({
           <Label htmlFor="material">Material you&rsquo;d like</Label>
           <Segmented
             label="Material"
-            options={MATERIALS}
-            value={material}
+            options={materialNames.length > 0 ? materialNames : [DEFAULT_MATERIAL]}
+            value={materialNames.includes(material) ? material : materialNames[0] ?? DEFAULT_MATERIAL}
             onChange={setMaterial}
           />
         </div>
@@ -350,6 +359,69 @@ export function UploadForm({
         <p className="mt-[11px] font-mono text-[11.5px] uppercase tracking-[0.04em] text-ink-3">
           {owner} confirms what&rsquo;s actually on the spool.
         </p>
+
+        {/* ---- multi-colour (AMS / MMU / manual swap) ---- */}
+        <div className="mt-[17.6px]">
+          <label className="inline-flex cursor-pointer items-center gap-[8.8px]">
+            <input
+              type="checkbox"
+              checked={multi}
+              onChange={(e) => {
+                setMulti(e.target.checked);
+                if (!e.target.checked) setExtraColors([]);
+              }}
+              className="h-[16px] w-[16px] accent-[#1b2126]"
+            />
+            <span className="text-[14px] font-bold text-ink">
+              Multi-colour print
+            </span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-ink-3">
+              up to {MAX_ADDITIONAL_COLORS} extra colours
+            </span>
+          </label>
+
+          {multi && (
+            <div className="mt-[11px] flex flex-wrap gap-[13.2px]">
+              {COLORS.filter((c) => c.name !== color).map((c) => {
+                const idx = extraColors.indexOf(c.name);
+                const picked = idx >= 0;
+                return (
+                  <button
+                    key={c.name}
+                    type="button"
+                    aria-pressed={picked}
+                    aria-label={`${c.name} as extra colour`}
+                    onClick={() =>
+                      setExtraColors((cur) =>
+                        picked
+                          ? cur.filter((n) => n !== c.name)
+                          : cur.length >= MAX_ADDITIONAL_COLORS
+                            ? cur
+                            : [...cur, c.name],
+                      )
+                    }
+                    className={`flex w-[80px] cursor-pointer flex-col items-center gap-[7px] border-0 bg-transparent p-0 ${
+                      picked ? "text-cherry-dk" : "text-ink-2"
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`flex h-[48px] w-[48px] items-center justify-center rounded-full border-[3px] border-ink transition-transform ${
+                        picked ? "scale-110 ring-[4px] ring-cherry-dk ring-offset-2 ring-offset-cream" : ""
+                      }`}
+                      style={{ background: c.hex }}
+                    >
+                      {picked && <span className="font-mono text-[12px] font-bold text-cream">{idx + 1}</span>}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold uppercase tracking-[0.04em]">
+                      {c.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </fieldset>
 
       {/* ---- the tip jar ---- */}
@@ -413,6 +485,23 @@ export function UploadForm({
           placeholder="No rush — needs to survive a bit of pulling."
           className="w-full resize-y rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] text-[16px] text-ink placeholder:text-ink-3"
         />
+      </div>
+
+      {/* ---- source link (optional) ---- */}
+      <div className="mt-[22px]">
+        <Label htmlFor="sourceUrl">Where did it come from? (optional)</Label>
+        <input
+          id="sourceUrl"
+          type="url"
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          maxLength={500}
+          placeholder="https://makeronline.com/en/model/…"
+          className="w-full rounded-card border-[3px] border-ink bg-porcelain px-[15px] py-[12px] font-mono text-[15px] text-ink placeholder:text-ink-3"
+        />
+        <p className="m-0 mt-[6px] font-mono text-[11px] uppercase tracking-[0.04em] text-ink-3">
+          A Makeronline, Printables or MakerWorld link — shown on the ticket as a reference.
+        </p>
       </div>
 
       {/* ---- print settings (optional, FRR-103) ---- */}

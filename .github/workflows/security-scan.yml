@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [ppp-app, ppp-migrate]
+        image: [printq-app, printq-migrate]
     steps:
       - uses: docker/login-action@v4
         with:

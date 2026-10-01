@@ -63,7 +63,7 @@ gets read properly.
 ## Reporting things
 
 - **A bug or an idea:** open an issue. Say what you expected, what happened,
-  and what you were running — the commit SHA from `PPP_TAG` is ideal.
+  and what you were running — the commit SHA from `PRINTQ_TAG` is ideal.
 - **A vulnerability:** do *not* open an issue. [SECURITY.md](SECURITY.md) has
   the private route.
 

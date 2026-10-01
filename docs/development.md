@@ -85,8 +85,8 @@ and that one left with the object store.)
 
 Two more workflows:
 
-- **`release-images.yml`** — every merge to main builds `ppp-app`,
-  `ppp-migrate` and `ppp-storage-migrate` (the one-shot that copies models out of
+- **`release-images.yml`** — every merge to main builds `printq-app`,
+  `printq-migrate` and `printq-storage-migrate` (the one-shot that copies models out of
   the old object store), pushes them to ghcr.io tagged with the commit SHA and
   `latest`, signs them with cosign (keyless, via GitHub OIDC), and scans the
   *published* image. A base image can carry a CVE that no scan of this

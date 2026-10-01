@@ -6,6 +6,7 @@ import type { Actor } from "@/lib/scope";
 import { record } from "@/lib/audit";
 import { WishSchema, hexForColor } from "@/lib/catalog";
 import { activeBenefitLabels } from "@/lib/benefits";
+import { activeMaterialNames } from "@/lib/materials";
 import {
   MAX_BYTES,
   REJECTION_COPY,
@@ -131,19 +132,32 @@ async function handleUpload(request: Request, user: Actor) {
     tip: form.get("tip"),
     note: form.get("note") ?? "",
     printSettings: form.get("printSettings") ?? "",
+    additionalColorNames: form
+      .getAll("additionalColorNames")
+      .filter((v): v is string => typeof v === "string" && v !== "")
+      .filter((v, i, a) => a.indexOf(v) === i),
+    sourceUrl: form.get("sourceUrl") ?? "",
   });
   if (!wish.success) {
     return bad(400, wish.error.issues[0]?.message ?? "Check the form.");
   }
 
-  // The tip is owner-managed data, so the list — not a compile-time enum — is
-  // what decides. A benefit the owner has retired, or one never on the list,
-  // is refused here even if the form somehow posted it. If the owner has no
-  // active benefits at all, any non-empty tip is accepted rather than locking
-  // uploads out.
+  // The tip and the material are both owner-managed data, so the lists — not
+  // compile-time enums — decide. A retired or unknown value is refused here
+  // even if the form somehow posted it. With no active benefits at all, any
+  // non-empty tip is accepted rather than locking uploads out; materials have
+  // seeded defaults, so an empty list is refused outright.
   const allowedTips = await activeBenefitLabels();
   if (allowedTips.length > 0 && !allowedTips.includes(wish.data.tip)) {
     return bad(400, "That is not a benefit on offer — pick one from the list.");
+  }
+  const allowedMaterials = await activeMaterialNames();
+  if (!allowedMaterials.includes(wish.data.material)) {
+    return bad(400, "That is not a material on offer — pick one from the list.");
+  }
+  // Extra colours must be disjoint from the primary.
+  if (wish.data.additionalColorNames.includes(wish.data.colorName)) {
+    return bad(400, "The extra colours cannot repeat the primary colour.");
   }
 
   const filename = safeFilename(file.name);
@@ -190,6 +204,8 @@ async function handleUpload(request: Request, user: Actor) {
         material: wish.data.material,
         colorName: wish.data.colorName,
         colorHex: hexForColor(wish.data.colorName),
+        additionalColorNames: wish.data.additionalColorNames,
+        sourceUrl: wish.data.sourceUrl === "" ? null : wish.data.sourceUrl,
         tip: wish.data.tip,
         note: wish.data.note,
         printSettings: wish.data.printSettings,

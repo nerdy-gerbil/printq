@@ -1,17 +1,17 @@
 {
-  "name": "pretty-please-print",
+  "name": "printq",
   "version": "0.1.0",
   "private": true,
-  "description": "Invite-only 3D print requests for a small office — upload a model, follow it through the print stages.",
+  "description": "Invite-only 3D print requests for a small office \u2014 upload a model, follow it through the print stages.",
   "license": "AGPL-3.0-or-later",
   "author": "Danilo Licitra",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danileau/prettypleaseprint.git"
+    "url": "git+https://github.com/nerdy-gerbil/printq.git"
   },
-  "homepage": "https://github.com/danileau/prettypleaseprint#readme",
+  "homepage": "https://github.com/nerdy-gerbil/printq#readme",
   "bugs": {
-    "url": "https://github.com/danileau/prettypleaseprint/issues"
+    "url": "https://github.com/nerdy-gerbil/printq/issues"
   },
   "type": "module",
   "scripts": {

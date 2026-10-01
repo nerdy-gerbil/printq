@@ -15,10 +15,10 @@ services:
     build:
       context: .
       target: runner
-    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-app:${PPP_TAG:-latest}
+    image: ${PRINTQ_REGISTRY:-ghcr.io/nerdy-gerbil}/printq-app:${PRINTQ_TAG:-latest}
 
   migrate:
     build:
       context: .
       target: migrator
-    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-migrate:${PPP_TAG:-latest}
+    image: ${PRINTQ_REGISTRY:-ghcr.io/nerdy-gerbil}/printq-migrate:${PRINTQ_TAG:-latest}

@@ -1,12 +1,12 @@
-# Pretty Please Print — the whole stack in containers.
+# PrintQ - Requests — the whole stack in containers.
 #
 # This file CONSUMES published images; it does not build them. A deployment
 # pulls a tag that CI built, signed and scanned, exactly like ciphra's VPS —
 # so the NAS never needs the source tree or a toolchain, and what runs there
 # is byte-for-byte what the pipeline tested.
 #
-#   PPP_REGISTRY  default ghcr.io/danileau
-#   PPP_TAG       default latest; pin to a commit SHA for a real deployment,
+#   PRINTQ_REGISTRY  default ghcr.io/danileau
+#   PRINTQ_TAG       default latest; pin to a commit SHA for a real deployment,
 #                 because that is also how you roll back.
 #
 # To build locally instead, add -f docker-compose.build.yml.
@@ -46,11 +46,11 @@ services:
   # username and a password — that link is the whole bootstrap, so read the
   # logs:  docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
   migrate:
-    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-migrate:${PPP_TAG:-latest}
-    container_name: ppp-migrate
+    image: ${PRINTQ_REGISTRY:-ghcr.io/nerdy-gerbil}/printq-migrate:${PRINTQ_TAG:-latest}
+    container_name: printq-migrate
     env_file: [.env.docker]
     environment:
-      DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+      DATABASE_URL: postgresql://printq:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/printq?schema=public
       # The set-password link it prints has to point at the hostname the
       # browser uses, not at the container's idea of localhost.
       BETTER_AUTH_URL: ${APP_URL:-http://localhost:3000}
@@ -66,12 +66,12 @@ services:
     restart: "no"
 
   app:
-    image: ${PPP_REGISTRY:-ghcr.io/danileau}/ppp-app:${PPP_TAG:-latest}
-    container_name: ppp-app
+    image: ${PRINTQ_REGISTRY:-ghcr.io/nerdy-gerbil}/printq-app:${PRINTQ_TAG:-latest}
+    container_name: printq-app
     <<: *restart
     env_file: [.env.docker]
     environment:
-      DATABASE_URL: postgresql://ppp:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/ppp?schema=public
+      DATABASE_URL: postgresql://printq:${DB_PASSWORD:?set DB_PASSWORD}@db:5432/printq?schema=public
       # Model files, on a disk rather than behind an S3 API. `migrate` creates
       # this directory and hands it to uid 1001 before the app ever starts —
       # see its command below.
@@ -102,21 +102,21 @@ services:
 
   db:
     image: postgres:17-alpine
-    container_name: ppp-db
+    container_name: printq-db
     <<: *restart
     environment:
-      POSTGRES_USER: ppp
+      POSTGRES_USER: printq
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
-      POSTGRES_DB: ppp
+      POSTGRES_DB: printq
     volumes:
       - ${DATA_ROOT:-./data}/db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ppp -d ppp"]
+      test: ["CMD-SHELL", "pg_isready -U printq -d printq"]
       interval: 10s
       timeout: 5s
       retries: 10
   mailpit:
     image: axllent/mailpit:latest
-    container_name: ppp-mailpit
+    container_name: printq-mailpit
     <<: *restart
     profiles: ["mailcatcher"]

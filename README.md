@@ -1,18 +1,18 @@
-# Pretty Please Print
+# PrintQ - Requests
 
-[![CI](https://github.com/danileau/prettypleaseprint/actions/workflows/ci.yml/badge.svg)](https://github.com/danileau/prettypleaseprint/actions/workflows/ci.yml)
+[![CI](https://github.com/nerdy-gerbil/printq/actions/workflows/ci.yml/badge.svg)](https://github.com/nerdy-gerbil/printq/actions/workflows/ci.yml)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-docker%20compose-2496ed)](docs/deployment.md)
-[![Stars](https://img.shields.io/github/stars/danileau/prettypleaseprint?style=flat)](https://github.com/danileau/prettypleaseprint/stargazers)
-[![Forks](https://img.shields.io/github/forks/danileau/prettypleaseprint?style=flat)](https://github.com/danileau/prettypleaseprint/network/members)
+[![Stars](https://img.shields.io/github/stars/nerdy-gerbil/printq?style=flat)](https://github.com/nerdy-gerbil/printq/stargazers)
+[![Forks](https://img.shields.io/github/forks/nerdy-gerbil/printq?style=flat)](https://github.com/nerdy-gerbil/printq/network/members)
 
-**Invite-only 3D print requests for a small office.** One person owns the
-printer. Everyone else uploads a model, says what they are hoping for, and
-follows it through the print stages on a board — instead of asking in a
-corridor and then wondering.
+**Invite-only 3D print requests for an office.** People upload a model, say
+what they are hoping for, and follow it through the print stages on a board —
+instead of asking in a corridor and then wondering. A small team works the
+queue; an admin runs the shop.
 
-Self-hosted, Docker Compose, no accounts anywhere but your own machine. Five
-people and one printer is the size it is built for, and it is honest about
+Self-hosted, Docker Compose, no accounts anywhere but your own machine. One
+printer and one office is the size it is built for, and it is honest about
 that: there is no multi-tenancy, no billing, and no queue theory.
 
 ## What it looks like
@@ -21,18 +21,33 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 | :-- |
 | ![The backlog board](docs/screenshots/board.png) |
 
-| A ticket, with the actual uploaded geometry | The printer owner's queue |
+| A ticket, with the actual uploaded geometry | The print team's queue |
 | :-- | :-- |
-| ![Story detail with the 3D viewer](docs/screenshots/story.png) | ![The admin queue](docs/screenshots/queue.png) |
+| ![Story detail with the 3D viewer](docs/screenshots/story.png) | ![The queue](docs/screenshots/queue.png) |
 
 ## What it does
 
 - **Invite-only.** There is no public sign-up. A `User` row cannot come into
   existence without a pending invitation, enforced in a single hook that every
   authentication method goes through.
+- **Three roles, unlimited people.** `user` files and follows requests.
+  `manager` works the queue — accept, print, hand over, flag, decline — beside
+  the admin. `admin` additionally runs the shop: invites, members and their
+  roles, materials, rates, the wishlist and the audit trail. There is no
+  single-admin constraint; hand the second pair of keys out when you need to.
+- **Claim it at `/setup`.** On a fresh database the first person to open
+  `/setup` becomes the admin — name, email, username, password, all chosen
+  there. No admin credentials in env files, no bootstrap link to chase. The
+  page exists only until an admin does.
 - **Upload a model** — `.stl` or `.3mf`, validated against its actual bytes
-  rather than its filename, measured for its bounding box, stored in object
-  storage and never in the web root.
+  rather than its filename, measured for its bounding box, stored as plain
+  files on your volume and never in the web root.
+- **Ask for colours** — one primary colour plus up to three extra ones for a
+  multi-plate, multi-colour print. A ticket's stripe wears every spool it
+  asked for, as bands.
+- **Say where it came from** — an optional source link on a request (a
+  Makeronline, Printables, MakerWorld, Thingiverse… page) shown as a badge on
+  the ticket and the queue.
 - **Follow it on a board** — Requested → Accepted → Printing → Delivery, one
   step at a time, forwards only. Or Declined, with a reason. Marking it **Done**
   takes it off the board while keeping it in *My orders*, so the rail carries
@@ -41,24 +56,34 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   is Requested, Accepted or Declined, but not once it is Printing. The ticket,
   the conversation and the uploaded file go with it. Plans change; unwanted
   prints waste filament.
-- **Print an old request again** — re-queue any past ticket of yours (a test
-  print that worked, a declined one you have fixed) as a fresh request, without
-  hunting down and re-uploading the file. The model is copied server-side, so
-  the two tickets own independent files.
-- **Note print settings** — an optional free-text field on a request for the
-  slicer specifics that come with some files (layer height, infill, supports,
-  temperatures). The printer owner sees them on the ticket, so they do not
-  become a back-and-forth, and a re-print keeps them.
-- **Browse your history** — a dedicated `/history` view of the prints that have
-  left the rail (delivered, done, declined), filterable by status, material and
-  when, with **Print again** on every row. It is where you go to re-run an old
-  job.
-- **Talk on the ticket** — a conversation thread per request, so "can you do it
-  in teal" lives with the model rather than in a chat app.
-- **Owner-managed benefits** — the "what's in it for you" tips are the printer
-  owner's to define at `/admin/benefits`, and the ones they mark *preferred* are
-  starred on the upload form so people know what the owner actually wants. Editing
-  or retiring a benefit never rewrites a past request's tip.
+- **Print an old request again** — re-queue any past ticket of yours as a
+  fresh request, without hunting down and re-uploading the file. The model is
+  copied server-side, and the colours, material and settings come with it.
+- **Note print settings** — an optional free-text field for the slicer
+  specifics that come with some files (layer height, infill, supports,
+  temperatures). The team sees them on the ticket, so they do not become a
+  back-and-forth.
+- **Browse your history** — a dedicated `/history` view of the prints that
+  have left the rail (delivered, done, declined), filterable by status,
+  material and when, with **Print again** on every row.
+- **Talk on the ticket** — a conversation thread per request, so "can you do
+  it in teal" lives with the model rather than in a chat app.
+- **Owner-managed benefits** — the "what's in it for you" tips are the admin's
+  to define at `/admin/benefits`, and the ones marked *preferred* are starred
+  on the upload form.
+- **Owner-managed materials** — the catalogue of what a request can be made
+  from lives at `/admin/materials`, not in a compile-time list: add, rename,
+  retire, restore. Retiring never rewrites a past ticket.
+- **A cost ledger, derived not stored** — the team records what a finished
+  print *weighed* (grams) and *ran* (minutes) on the ticket; the app derives
+  the cost at render from the current rates: $/kg per material, one $/hour for
+  the machine, set at `/admin/materials` and `/admin/rates`. Nothing is
+  snapshotted, nothing is inferred, and nothing is shown to the requester —
+  what a print costs the team is the team's ledger.
+- **A wishlist** — the intake queue for "ooh, print this": paste a product
+  link at `/admin/wishlist` and the page's own title and picture are picked up
+  and cached, with a source badge. Nothing there is a promise; the board is
+  the commitment.
 - **Revoke access when someone leaves** — suspends the account, signs them out
   everywhere and refuses new sign-ins, while keeping their tickets, comments
   and history. Reversible, and audited.
@@ -67,31 +92,32 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 - **An audit trail** of everything that changes who can get in or what happens
   to someone's model, readable at `/admin/audit`, never edited or deleted.
 - **Ask for features, triaged like the backlog** — a parallel "frr" board at
-  `/frr` where anyone files a feature request (title, priority, category) and
-  the owner moves it through the same stages, conversation, notifications and
-  audit trail a print goes through. Its own tables; the print flow is untouched.
-  See **[Feature requests](docs/feature-requests.md)**.
+  `/frr` where anyone files a feature request and the team moves it through
+  the same stages, conversation, notifications and audit trail a print goes
+  through. See **[Feature requests](docs/feature-requests.md)**.
 - **Drive it over HTTP** — every ticket, transition, comment and notification
   is a JSON endpoint, described by an OpenAPI 3.1 document and callable from a
-  Swagger console at `/docs`. Same session, same scope, same audit trail as the
-  UI; the rules live in one place, so the API cannot enforce less than the
-  board does. See **[the API](docs/api.md)**.
-- **Open a model straight in PrusaSlicer** — one click on a ticket hands the
-  model to a slicer running on your own machine. A small helper the printer
-  owner installs once does the fetch, because PrusaSlicer's own deep link
-  refuses any host but Printables. The link carries its own short-lived
-  credential, so nothing secret sits in the helper's config.
-  See **[Open in PrusaSlicer](docs/prusaslicer.md)**.
+  Swagger console at `/docs`. Same session, same scope, same audit trail as
+  the UI. See **[the API](docs/api.md)**.
+- **Shout it to chat** — set `WEBHOOK_URL` and every notification the print
+  team receives is also POSTed as `{ "text": … }` to a Discord or Slack
+  webhook. Fire-and-forget; a down relay never blocks the queue.
+- **Open a model straight in a slicer** — one click on a ticket hands the
+  model to **PrusaSlicer** or **Anycubic Slicer Next (FDM)** running on your
+  own machine. A small helper the admin installs once does the fetch, because
+  the slicers' own deep links refuse arbitrary hosts. The link carries its own
+  short-lived credential, so nothing secret sits in the helper's config.
+  See **[Open in a slicer](docs/prusaslicer.md)**.
 - **Or just take the file** — a plain download on every ticket, for a machine
-  without the helper, a phone, or a slicer that is not PrusaSlicer. Same
-  permissions as the ticket, and recorded when the bytes go to somebody other
-  than the person who uploaded them.
+  without the helper, a phone, or a slicer that is neither. Same permissions
+  as the ticket, and recorded when the bytes go to somebody other than the
+  person who uploaded them.
 
 ## Requirements
 
 | | |
 | --- | --- |
-| Host | anything that runs Docker Compose on **`linux/amd64`** — a NAS, an x86 VPS, a spare laptop. **Not arm64.** The published `ppp-app` and `ppp-migrate` images are built for amd64 only, and a second architecture would have to be verified rather than merely built — the suites are this project's contract, and running them twice is not a commitment it makes. An arm64 host (a Pi 5, an Ampere VPS, an Apple Silicon Mac) fails at `docker compose pull` with `no matching manifest for linux/arm64`. |
+| Host | anything that runs Docker Compose on **`linux/amd64`** — a NAS, an x86 VPS, a spare laptop. **Not arm64.** The published `printq-app` and `printq-migrate` images are built for amd64 only, and a second architecture would have to be verified rather than merely built — the suites are this project's contract, and running them twice is not a commitment it makes. An arm64 host (a Pi 5, an Ampere VPS, an Apple Silicon Mac) fails at `docker compose pull` with `no matching manifest for linux/arm64`. |
 | Memory | ~1 GB for the whole stack (app, Postgres) |
 | Disk | small — the database is megabytes; uploads are capped at 250 MB each |
 | TLS | **required.** The app refuses to start on plain `http://` in production, and passkeys need a secure context |
@@ -100,18 +126,19 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 ## Quick start
 
 ```bash
-git clone https://github.com/danileau/prettypleaseprint.git && cd prettypleaseprint
+git clone https://github.com/nerdy-gerbil/printq.git && cd printq
 cp .env.docker.example .env.docker
 ```
 
-Edit `.env.docker` — generate the two secrets and say who the admin is:
+Edit `.env.docker` — generate the two secrets:
 
 ```bash
 BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
 DB_PASSWORD="$(openssl rand -hex 24)"
-ADMIN_EMAIL="you@example.org"
-ADMIN_NAME="Your Name"
 ```
+
+There is nothing to set for the admin. The first one is created through the
+**first-run `/setup` page**, in the browser, after the stack is up.
 
 **Leave `APP_URL` and `PASSKEY_RP_ID` at the example's localhost values for
 now.** They are what Better Auth derives cookie scope and the WebAuthn relying
@@ -130,20 +157,16 @@ docker compose --env-file .env.docker \
   -f docker-compose.test.yml --profile mailcatcher up -d --build
 ```
 
-The migrator prints a **one-use link** for the admin to choose a username and
-a password. Read it, and open it within thirty minutes:
-
-```bash
-docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
-```
-
-Then invite the office from `/admin/invites`. For a real deployment behind a
+Open **http://localhost:3000/setup** once and claim the printer: the shop's
+name, an email, a username and a password. The page only exists while there is
+no admin, so this is a first-run ritual, not a door you leave open. Then
+invite the office from `/admin/invites`. For a real deployment behind a
 reverse proxy, see **[docs/deployment.md](docs/deployment.md)**.
 
-> There is deliberately no `ADMIN_PASSWORD`. A password in an env file is also
-> in `docker inspect`, in the shell history that wrote it, and in every backup
-> of the host — still valid months later. A link that expires in half an hour
-> is a smaller thing to leak.
+> There is deliberately no `ADMIN_PASSWORD` and no bootstrap link. A password
+> in an env file is also in `docker inspect`, in the shell history that wrote
+> it, and in every backup of the host. A page that exists only until it is
+> used, over a session that is yours alone, is a smaller thing to leak.
 
 ## Configuration
 
@@ -152,20 +175,20 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 
 | Variable | Required | What it does |
 | --- | --- | --- |
-| `BETTER_AUTH_SECRET` | **yes** | Signs session cookies. `openssl rand -base64 32`. Losing it invalidates every session. |
+| `BETTER_AUTH_SECRET` | **yes** | Signs session cookies and slicer-link credentials. `openssl rand -base64 32`. Losing it invalidates every session. |
 | `DB_PASSWORD` | **yes** | Postgres password. Baked into the data directory on first start — see [Restore](#restore). |
 | `APP_URL` | **yes** | The origin the browser sees, including scheme. Cookies, invitation links and the WebAuthn relying party derive from it. Must be `https://` in production. |
 | `PASSKEY_RP_ID` | **yes** | Registrable domain, no scheme or port. **Permanent** — changing it kills every enrolled passkey. |
 | `PASSKEY_RP_NAME` | | Shown in the browser's passkey prompt. |
-| `ADMIN_EMAIL` / `ADMIN_NAME` | **yes** | The single admin, created on first start. |
 | `DATA_ROOT` | | Where the database and uploads live on disk. Default `./data`. |
 | `SMTP_URL` | | SMTP transport. **Leave unset and the app still works** — links are shown to the admin to hand over. |
 | `RESEND_API_KEY` | | Alternative to `SMTP_URL`; takes precedence. |
 | `MAIL_FROM` | | Envelope sender. |
+| `WEBHOOK_URL` | | POST every print-team notification as `{ "text": … }` — a Discord or Slack webhook URL. Fire-and-forget. |
 | `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
-| `PPP_REGISTRY` / `PPP_TAG` | | Which published image to run. Pin `PPP_TAG` to a release (`v0.1.0`) or a commit SHA; either is also how you roll back. |
+| `PRINTQ_REGISTRY` / `PRINTQ_TAG` | | Which published image to run. Pin `PRINTQ_TAG` to a release (`v0.1.0`) or a commit SHA; either is also how you roll back. |
 | `CF_TUNNEL_TOKEN` | | Connector token for `docker-compose.tunnel.yml`, from Cloudflare Zero Trust. A credential: anything holding it can serve the hostnames routed to that tunnel. See [Deploying behind a Cloudflare Tunnel](docs/deployment.md#deploying-behind-a-cloudflare-tunnel). |
 
 ## Deploying
@@ -183,6 +206,8 @@ none at all — `docker-compose.tunnel.yml` replaces the reverse proxy with a
 Cloudflare Tunnel connector that dials *outward*, so there is no port to
 forward and no `A` record to keep current. See
 [Deploying behind a Cloudflare Tunnel](docs/deployment.md#deploying-behind-a-cloudflare-tunnel).
+For PaaS-style hosts that build from a repository, `docker-compose.dokploy.yml`
+is a template that builds the images, migrates, then starts the app.
 
 `docker-compose.prod.yml` **consumes** images rather than building them, so a
 deployment needs no source tree and no toolchain, and what runs there is
@@ -190,24 +215,21 @@ byte-for-byte what CI tested and signed. It publishes **no host ports at all** �
 each overlay adds only what its context needs.
 
 Every merge to `main` publishes images tagged with the commit SHA and `latest`;
-every `v*` tag publishes that same commit under its version. Pin `PPP_TAG` to a
-release if you want to move deliberately, or to a SHA if you want to follow
-`main` closely.
+every `v*` tag publishes that same commit under its version. Pin `PRINTQ_TAG`
+to a release if you want to move deliberately, or to a SHA if you want to
+follow `main` closely.
 
-The images are named `ppp-app` and `ppp-migrate` — after the project's old
-short name, kept deliberately because they are a deployment interface. Renaming
-them would break every pinned `PPP_TAG` in exchange for nothing.
+The images are named `printq-app` and `printq-migrate`, and published from
+`ghcr.io/nerdy-gerbil`. They are **public**, so a deployment needs no registry
+credential at all. `scripts/deploy-wizard.sh` reflects that: run it without a
+token and it lists releases, which is the right menu for most deployments;
+give it a `read:packages` token and it lists every published image including
+SHA builds. That token is optional, is never stored, and is only needed
+because GitHub gates the package *listing* API even for public packages.
 
-The images are **public**, so a deployment needs no registry credential at all.
-`scripts/deploy-wizard.sh` reflects that: run it without a token and it lists
-releases, which is the right menu for most deployments; give it a
-`read:packages` token and it lists every published image including SHA builds.
-That token is optional, is never stored, and is only needed because GitHub
-gates the package *listing* API even for public packages.
-
-`scripts/deploy-wizard.sh` is the way to move between versions: it lists what is
-published, cosign-verifies before swapping, health-checks after, and rolls back
-on its own if the new image does not come good. See
+`scripts/deploy-wizard.sh` is the way to move between versions: it lists what
+is published, cosign-verifies before swapping, health-checks after, and rolls
+back on its own if the new image does not come good. See
 **[docs/deployment.md](docs/deployment.md)**.
 
 ## Backup and restore
@@ -219,14 +241,14 @@ Everything that matters is under `DATA_ROOT` plus one file:
 | | |
 | --- | --- |
 | `$DATA_ROOT/db/` | Postgres — accounts, tickets, comments, the audit trail |
-| `$DATA_ROOT/uploads/` | the uploaded `.stl` / `.3mf` files, as plain files |
+| `$DATA_ROOT/uploads/` | the uploaded `.stl` / `.3mf` files **and** the cached wishlist thumbnails, as plain files |
 | `$DATA_ROOT/models/` | **only if you have not migrated yet** — the old object store's data directory. Plain `tar` cannot read it usefully; see [Deployment](docs/deployment.md). |
 | `.env.docker` | the secrets. **Not** under `DATA_ROOT`, and not in the repo. |
 
 On ZFS, one recursive snapshot of the parent dataset captures all three:
 
 ```bash
-zfs snapshot -r storage/applications/ppp@$(date +%F)
+zfs snapshot -r storage/applications/printq@$(date +%F)
 ```
 
 That snapshot is *crash-consistent*, not clean — Postgres replays its WAL on
@@ -240,14 +262,14 @@ an archive Postgres will refuse to start from:
 ```bash
 docker compose --env-file .env.docker -f docker-compose.prod.yml down
 docker run --rm -v "$DATA_ROOT:/data:ro" -v "$PWD:/backup" alpine \
-  tar czf /backup/ppp-$(date +%F).tgz -C /data .
+  tar czf /backup/printq-$(date +%F).tgz -C /data .
 ```
 
 Either way, take a logical dump alongside it — it restores into *any* Postgres,
 not only back onto this data directory, and it needs no root:
 
 ```bash
-docker exec ppp-db pg_dump -U ppp -Fc ppp > ppp-$(date +%F).dump
+docker exec printq-db pg_dump -U printq -Fc printq > printq-$(date +%F).dump
 ```
 
 ### Restore
@@ -257,11 +279,11 @@ docker exec ppp-db pg_dump -U ppp -Fc ppp > ppp-$(date +%F).dump
 docker compose --env-file .env.docker -f docker-compose.prod.yml down
 
 # 2. put the data back (ZFS rollback, or extract the archive)
-zfs rollback storage/applications/ppp/data/db@2026-08-23
-zfs rollback storage/applications/ppp/data/models@2026-08-23
+zfs rollback storage/applications/printq/data/db@2026-08-23
+zfs rollback storage/applications/printq/data/uploads@2026-08-23
 #   without ZFS, from the container-made archive:
 #   docker run --rm -v "$DATA_ROOT:/data" -v "$PWD:/backup:ro" alpine \
-#     sh -c 'rm -rf /data/db /data/models && tar xzf /backup/ppp-2026-08-23.tgz -C /data'
+#     sh -c 'rm -rf /data/db /data/uploads && tar xzf /backup/printq-2026-08-23.tgz -C /data'
 
 # 3. bring it up; the migrator applies any pending migrations
 docker compose --env-file .env.docker -f docker-compose.prod.yml up -d
@@ -271,7 +293,7 @@ docker compose --env-file .env.docker -f docker-compose.prod.yml ps
 Restoring from a logical dump instead, onto a running stack:
 
 ```bash
-docker exec -i ppp-db pg_restore -U ppp -d ppp --clean --if-exists < ppp-2026-08-23.dump
+docker exec -i printq-db pg_restore -U printq -d printq --clean --if-exists < printq-2026-08-23.dump
 ```
 
 ### When it goes wrong
@@ -285,9 +307,9 @@ except the cause:
 
 | what you see | |
 | --- | --- |
-| `ppp-db` | **healthy** — this is the misleading part |
-| `ppp-app` | never starts, so it logs nothing at all |
-| `ppp-migrate` | `Error: P1000: Authentication failed against database server` |
+| `printq-db` | **healthy** — this is the misleading part |
+| `printq-app` | never starts, so it logs nothing at all |
+| `printq-migrate` | `Error: P1000: Authentication failed against database server` |
 
 So look in the **migrator's** logs, which is the one place nobody thinks to
 check because it is the container that is supposed to exit:
@@ -315,7 +337,7 @@ attachment:
 
 ```bash
 docker network inspect npm-proxy --format '{{range .Containers}}{{.Name}} {{end}}'
-docker run --rm --network npm-proxy curlimages/curl -sS -m 5 http://ppp-app:3000/api/health
+docker run --rm --network npm-proxy curlimages/curl -sS -m 5 http://printq-app:3000/api/health
 ```
 
 **`unauthorized` when pulling the images.**
@@ -323,7 +345,7 @@ The published images are public, so this should not happen — check the tag
 exists before assuming it is an auth problem:
 
 ```bash
-docker manifest inspect ghcr.io/danileau/ppp-app:v0.1.0
+docker manifest inspect ghcr.io/nerdy-gerbil/printq-app:v0.1.0
 ```
 
 On a **fork** with private packages you do need a credential, and it must be a
@@ -369,14 +391,12 @@ Cloudflare set it to `cloudflare` — not `true`, because Cloudflare *appends* t
 Behind a proxy that replaces the header, `true`. Set either only if the app
 cannot be reached without going through that proxy.
 
-**The bootstrap link expired.**
-Re-run the migrator; it prints a fresh one, and keeps doing so until a password
-is actually set. It never resets an existing password.
-
-```bash
-docker compose --env-file .env.docker -f docker-compose.prod.yml up -d migrate
-docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
-```
+**`/setup` is gone, and the printer was never claimed.**
+The page only exists while the database has no admin. If it answers 404 or says
+it is not available, an admin row already exists — check who can sign in at
+`/admin/invites`, or take a peek in the database. There is deliberately no
+second bootstrap: a page that can mint admins is a page worth finding, so it
+stops existing the moment it has work to protect.
 
 **Nobody can register, and the error mentions a breach check.**
 The password check calls `api.pwnedpasswords.com` and fails closed. If the host
@@ -386,12 +406,12 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 
 | | |
 | --- | --- |
-| **[Authentication](docs/authentication.md)** | invite-only registration, passwords, passkeys, resets, and why each decision went the way it did |
+| **[Authentication](docs/authentication.md)** | the three roles, invite-only registration, passwords, passkeys, resets, and why each decision went the way it did |
 | **[Architecture](docs/architecture.md)** | the viewer, upload validation, decisions taken against the design handoff, and the file layout |
-| **[Deployment](docs/deployment.md)** | containers, reverse proxies, the deploy wizard, TLS, first run |
+| **[Deployment](docs/deployment.md)** | containers, reverse proxies, the deploy wizard, TLS, first run, PaaS templates |
 | **[Feature requests](docs/feature-requests.md)** | the `/frr` track — file a request, triage it exactly like the print backlog |
 | **[The API](docs/api.md)** | the JSON surface, bearer tokens, the OpenAPI document and the console at `/docs` |
-| **[Open in PrusaSlicer](docs/prusaslicer.md)** | the one-click "send to the slicer" bridge, the helper, and why the deep link cannot be used |
+| **[Open in a slicer](docs/prusaslicer.md)** | the `printq://` and `printq-anycubic://` bridges, the helper, and why the deep links cannot be used |
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
@@ -471,5 +491,5 @@ benefit publicly, and nothing from those who merely use it.
 If your organisation's policy forbids AGPL software — some do, blanket-style —
 you are welcome to ask about other terms.
 
-Built from the design handoff in `Pretty Please Print/`, which is why story refs
-read `PPP-104` and the copy sounds like a diner.
+Story refs read `PrintQ-104` — a hundred-series, like a diner's ticket rail,
+which is the look the board is going for.

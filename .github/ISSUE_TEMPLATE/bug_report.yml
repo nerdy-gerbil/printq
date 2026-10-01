@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: Which version?
-      description: The `PPP_TAG` you are running, or the commit SHA.
+      description: The `PRINTQ_TAG` you are running, or the commit SHA.
     validations: { required: true }
   - type: dropdown
     id: how

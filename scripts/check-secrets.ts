@@ -28,7 +28,7 @@ const ALL = process.argv.includes("--all");
 /** Deliberately published. See docker-compose.yml. */
 const KNOWN_DEV_VALUES = new Set([
   "dev-only-not-a-secret",
-  "ppp",
+  "printq",
   "localhost",
   "build-time-placeholder-never-signs-anything",
 ]);
@@ -111,7 +111,7 @@ for (const path of files) {
     if (!m) continue;
     // A shape-based match whose text is one of the deliberately-public
     // development values is not a finding — the dev connection string is
-    // `postgresql://ppp:dev-only-not-a-secret@localhost`, which is a password
+    // `postgresql://printq:dev-only-not-a-secret@localhost`, which is a password
     // in a URL by shape and a documented placeholder in fact.
     if ([...KNOWN_DEV_VALUES].some((v) => m[0].includes(v))) continue;
     hits.push({ path, what: label, sample: `${m[0].slice(0, 16)}…` });

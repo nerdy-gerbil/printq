@@ -6,13 +6,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  *
  * The helper on somebody's own machine has to fetch model bytes from the app,
  * and it is not a browser: it holds no cookie. It used to hold a **bearer
- * token pasted into `~/.config/ppp/slicer.conf`** — which was the session
+ * token pasted into `~/.config/printq/slicer.conf`** — which was the session
  * token, and therefore a thirty-day, full-authority credential sitting in a
  * file. Shortening sessions to twenty idle minutes broke that outright (the
  * helper started answering `HTTP 401`), and the fix is not a longer-lived
  * credential in the same place. It is not needing one.
  *
- * So the link carries its own authority instead. `ppp://slice/<id>?t=…` is
+ * So the link carries its own authority instead. `printq://slice/<id>?t=…` is
  * minted when the ticket is rendered, for the person looking at it and for
  * that model alone, and it expires in half an hour. Nothing secret is written
  * to disk at all: the config keeps only the address of the instance.
@@ -62,7 +62,7 @@ function sign(encodedPayload: string): string {
 /**
  * Mint a link credential for one person and one model.
  *
- * base64url throughout: the result goes in a `ppp://` URL that a desktop
+ * base64url throughout: the result goes in a `printq://` URL that a desktop
  * environment hands to a shell script as an argument, and anything needing
  * escaping there is a bug waiting to happen.
  */

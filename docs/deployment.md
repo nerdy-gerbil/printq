@@ -31,6 +31,7 @@ Six compose files, each with one job:
 | `docker-compose.test.yml` | publishes the ports a local run and the host-side suites need |
 | `docker-compose.proxy.yml` | the proxy network, for any deployment behind a reverse proxy |
 | `docker-compose.tunnel.yml` | a Cloudflare Tunnel connector, for a deployment with no inbound path at all |
+| `docker-compose.dokploy.yml` | a PaaS-style template (Dokploy, Coolify, a plain `docker compose` host): builds the images, migrates, then starts the app |
 
 `prod` consumes rather than builds on purpose: a deployment then needs no
 source tree and no toolchain, and what runs there is byte-for-byte what CI
@@ -75,17 +76,17 @@ docker login ghcr.io -u <your-github-user> -p <classic PAT with read:packages>
 **In `.env.docker`:**
 
 ```bash
-DATA_ROOT=/mnt/tank/ppp
+DATA_ROOT=/mnt/tank/printq
 APP_URL=https://print.example.org
 PASSKEY_RP_ID=print.example.org        # permanent — see below
 TRUST_PROXY_HEADERS=true
 SMTP_URL=smtp://user:pass@mail.example.org:587
 
-PPP_REGISTRY=ghcr.io/danileau
-PPP_TAG=a1b2c3d                        # a commit SHA, not `latest`
+PRINTQ_REGISTRY=ghcr.io/nerdy-gerbil
+PRINTQ_TAG=a1b2c3d                        # a commit SHA, not `latest`
 ```
 
-Pin `PPP_TAG` to a SHA rather than `latest`. It is what makes a deploy
+Pin `PRINTQ_TAG` to a SHA rather than `latest`. It is what makes a deploy
 reproducible, and **it is also how you roll back** — set the previous SHA and
 bring the stack up again.
 
@@ -116,7 +117,7 @@ had it. Put the binary on the same dataset as the deployment, where the wizard
 also looks:
 
 ```bash
-cd /mnt/<pool>/applications/ppp/app
+cd /mnt/<pool>/applications/printq/app
 mkdir -p bin
 curl -fsSL -o bin/cosign \
   https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64
@@ -131,9 +132,9 @@ Verify by hand if you want to see it work:
 
 ```bash
 ./bin/cosign verify \
-  --certificate-identity-regexp '^https://github\.com/danileau/(prettypleaseprint|ppp)/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$' \
+  --certificate-identity-regexp '^https://github\.com/nerdy-gerbil/printq/\.github/workflows/release-images\.yml@refs/(heads/main|tags/v[0-9][0-9A-Za-z.\-]*)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/danileau/ppp-app:v0.1.0
+  ghcr.io/nerdy-gerbil/printq-app:v0.1.0
 ```
 
 Two things that alternation is carrying, both found by verifying a real
@@ -157,7 +158,7 @@ the NAS is a consumer of images and should stay one.
 ./deploy-wizard.sh --status   # read-only: what is live, and what is newer
 ```
 
-It answers what a bare `sed PPP_TAG && docker compose up -d` does not:
+It answers what a bare `sed PRINTQ_TAG && docker compose up -d` does not:
 
 1. **Which image?** It asks ghcr.io what is actually published, newest first,
    with build dates and the live one marked, so you pick from a menu instead of
@@ -187,14 +188,14 @@ Rollback is the same menu: pick the older tag.
 | --- | --- |
 | Domain Names | `print.example.org` |
 | Scheme | `http` |
-| Forward Hostname | `ppp-app` — the container name, not an IP |
+| Forward Hostname | `printq-app` — the container name, not an IP |
 | Forward Port | `3000` |
 | Block Common Exploits | on |
 | Websockets Support | off — this app opens none |
 | SSL | request a Let's Encrypt certificate, **Force SSL** on, HTTP/2 on |
 | HSTS | off — the app sends its own |
 
-The app publishes no host port, so `ppp-app:3000` over the shared network is
+The app publishes no host port, so `printq-app:3000` over the shared network is
 the only way in. Nothing on the LAN can reach it in cleartext and bypass TLS.
 
 ### Your proxy has to allow the upload size too
@@ -304,17 +305,21 @@ their password and re-enrols. Pick the hostname you intend to keep.
 
 ### First run
 
-`migrate` seeds exactly one admin from `ADMIN_EMAIL` / `ADMIN_NAME` and prints
-a one-use link for setting a username and a password:
+There is nothing to configure for the admin. Bring the stack up, open the app
+in a browser, and go to **`/setup`** once:
 
-```bash
-docker compose --env-file .env.docker -f docker-compose.prod.yml logs migrate
+```
+https://your-host.example/setup
 ```
 
-Open it within thirty minutes, then invite the office from `/admin/invites`.
-The seed is an upsert, so it is safe on every start and keeps the admin's name
-in step with the environment — but it will refuse to create a *second* admin,
-and so will the database, and it never resets a password that already exists.
+It asks for the shop's name, an email, a username and a password, creates the
+first admin, and then stops existing — the page is only routable while the
+database has no admin at all. From there, invite the office from
+`/admin/invites`.
+
+If the page answers that it is not available, an admin row already exists and
+the claim has been made. There is deliberately no second bootstrap; recovery
+runs through the guest list's password reset, which is what it is for.
 
 ### There is no object store
 
@@ -360,7 +365,7 @@ deploy. The old container survives the `git pull`.
 
 ```bash
 # 1. snapshot, if you are on ZFS
-zfs snapshot -r storage/applications/ppp@pre-storage-migration
+zfs snapshot -r storage/applications/printq@pre-storage-migration
 
 # 2. stop everything
 docker compose --env-file .env.docker -f docker-compose.prod.yml down
@@ -374,7 +379,7 @@ docker compose --env-file .env.docker \
 docker compose --env-file .env.docker -f docker-compose.prod.yml up -d
 ```
 
-It runs as a one-shot container named `ppp-storage-migration`, built from the
+It runs as a one-shot container named `printq-storage-migration`, built from the
 Dockerfile's `builder` stage and hidden behind a `migration` profile so no `up`
 can start it by accident. Add whatever overlay your deployment normally uses
 (`docker-compose.tunnel.yml`, `docker-compose.proxy.yml`) to steps 2 and 4 —
@@ -391,7 +396,7 @@ Take a snapshot first if you are on ZFS. One recursive snapshot makes the whole
 exercise reversible, and it costs nothing:
 
 ```bash
-zfs snapshot -r storage/applications/ppp@pre-storage-migration
+zfs snapshot -r storage/applications/printq@pre-storage-migration
 ```
 
 **Do not copy the directory instead.** MinIO does not store objects as files.
@@ -447,6 +452,65 @@ secrets and is not in the repo — keep it somewhere you will still have it afte
 a rebuild, because losing `BETTER_AUTH_SECRET` invalidates every session and
 losing `DB_PASSWORD` locks you out of the database.
 
+## Deploying to a plain VPS
+
+Any amd64 virtual server with Docker and Docker Compose works — a Hostinger
+VPS, a DigitalOcean droplet, a Hetzner cloud server. The shape is the same
+everywhere: clone the repository, set the secrets, bring the stack up with the
+build overlay, claim the printer at `/setup`, and put TLS in front.
+
+```bash
+git clone https://github.com/nerdy-gerbil/printq.git && cd printq
+cp .env.docker.example .env.docker
+
+# generate the two secrets into .env.docker:
+#   BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+#   DB_PASSWORD="$(openssl rand -hex 24)"
+# and set the public address you will serve from:
+#   APP_URL=https://print.example.org
+#   PASSKEY_RP_ID=print.example.org        # permanent — see below
+
+docker compose --env-file .env.docker \
+  -f docker-compose.prod.yml -f docker-compose.build.yml up -d --build
+```
+
+First run is `/setup` in a browser — see [First run](#first-run). There is no
+admin variable and no bootstrap link to look for in logs.
+
+**TLS.** The app refuses plain HTTP in production and passkeys need a secure
+context, so TLS is part of the deployment, not a nicety. Two good routes:
+
+- **A reverse proxy on the same host** — Nginx Proxy Manager, Caddy, Traefik —
+  terminating TLS with a Let's Encrypt certificate and forwarding to the app.
+  Join the proxy to the compose network (or pass `docker-compose.proxy.yml` and
+  connect it to `npm-proxy`) and point it at `printq-app:3000`. Set
+  `TRUST_PROXY_HEADERS=true` only once the app is unreachable except through
+  the proxy.
+- **A Cloudflare Tunnel**, which needs no open inbound port at all — see
+  [the next section](#deploying-behind-a-cloudflare-tunnel).
+
+**Storage.** Point `DATA_ROOT` at a directory on a volume you back up. The
+database and every uploaded model live under it; a 20 GB disk is generous for
+an office's worth of models, and the upload cap is 250 MB per file.
+
+**Firewall.** Expose 80/443 for the proxy, SSH, and nothing else. Postgres and
+the app publish no host ports in the prod compose file; keep it that way.
+
+## Deploying to a PaaS-style host (Dokploy and friends)
+
+`docker-compose.dokploy.yml` is a template for hosts that build from a
+repository — Dokploy, Coolify, or a host where `docker compose up` is all you
+get. It differs from `docker-compose.prod.yml` in three ways: it **builds** the
+app and migrator images from the source tree instead of pulling published
+ones, it publishes the app on `:3000` so the platform's edge can reach it, and
+it carries no proxy or tunnel overlays — the platform is the edge.
+
+Everything is driven by `APP_URL` and the standard variables from
+`.env.docker.example`; there is no hardcoded domain. Migrations run as a
+one-shot service the app waits on via `service_completed_successfully`, so the
+first thing that ever serves traffic is an already-migrated app. The same
+first-run rule applies: after the stack is up, claim the printer at `/setup`.
+
 ## Deploying behind a Cloudflare Tunnel
 
 The alternative to the section above, and the better answer on a connection
@@ -501,9 +565,9 @@ TRUST_PROXY_HEADERS=cloudflare     # CF-Connecting-IP; see below
 
 | | |
 | --- | --- |
-| Subdomain / Domain | `ppp` · `example.org` |
+| Subdomain / Domain | `printq` · `example.org` |
 | Type | `HTTP` |
-| URL | `ppp-app:3000` — the container name, not an IP, and not `localhost` |
+| URL | `printq-app:3000` — the container name, not an IP, and not `localhost` |
 
 `localhost` there would be the connector's own container, which is the mistake
 this table exists to prevent. Adding the hostname writes the proxied `CNAME`
@@ -512,7 +576,7 @@ second, wrong answer.
 
 Then bring the stack up with the overlay, and once it serves, dismantle **this
 app's** old way in: delete its Proxy Host in Nginx Proxy Manager, and stop
-passing `docker-compose.proxy.yml`, so `ppp-app` is no longer on the proxy
+passing `docker-compose.proxy.yml`, so `printq-app` is no longer on the proxy
 network. Until you do, the app is still directly reachable — and
 `TRUST_PROXY_HEADERS=cloudflare` is only honest while it is not.
 
@@ -520,7 +584,7 @@ network. Until you do, the app is still directly reachable — and
 forwards on the router, the proxy itself and a wildcard certificate are
 usually shared: every other hostname still proxied the old way arrives through
 them. Remove them and those sites go down with **522** — Cloudflare cannot
-reach an origin that no longer answers — while ppp, on its tunnel, stays up and
+reach an origin that no longer answers — while printq, on its tunnel, stays up and
 makes the cause harder to see. The forwards and the certificate can only go
 once the *last* hostname behind them has moved to a tunnel too; adding each one
 as another Public Hostname on a tunnel is how they get there.
@@ -594,11 +658,11 @@ you are reading an error at speed:
 | symptom | meaning |
 | --- | --- |
 | **error 1033** | Cloudflare has the hostname but no healthy connector — `cloudflared` is down, cannot find the edge (below), or the token is wrong |
-| **502** | the connector is up but cannot reach `ppp-app:3000` — wrong service URL, or the app is unhealthy |
+| **502** | the connector is up but cannot reach `printq-app:3000` — wrong service URL, or the app is unhealthy |
 | **413** | the upload cap above |
 | **522** | should stop happening; it means something is still resolving to an origin IP |
 
-`docker logs ppp-cloudflared` and the tunnel's own health in the Zero Trust
+`docker logs printq-cloudflared` and the tunnel's own health in the Zero Trust
 dashboard are the checks. The dashboard is the authoritative one, because it
 knows whether the edge can see the connector — which nothing on the host can.
 
@@ -631,7 +695,7 @@ dig SRV _v2-origintunneld._tcp.argotunnel.com @<nameserver>   # each in turn
 
 Fix the dead resolver, or move a working one to the front of the host's list;
 the next restart picks it up with no change to the stack. A token problem looks
-different in `docker logs ppp-cloudflared` — the edge is reached and refuses
+different in `docker logs printq-cloudflared` — the edge is reached and refuses
 it — so read the log before rotating a token that was never the problem.
 
 The connector image is distroless and has neither a shell nor `curl`, so it

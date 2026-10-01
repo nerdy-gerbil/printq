@@ -15,7 +15,7 @@ import Link from "next/link";
  * right now", not "never mention this again". It disappears for good the
  * moment a passkey exists, which is the only end state worth having.
  */
-const DISMISSED_KEY = "ppp.passkey-nudge-dismissed";
+const DISMISSED_KEY = "printq.passkey-nudge-dismissed";
 
 export function PasskeyNudge() {
   const [show, setShow] = useState(false);

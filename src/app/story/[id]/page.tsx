@@ -2,10 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getStoryOr404, printerName, requireUser, storyRef, FLOW } from "@/lib/authz";
-import { quantityText, relativeTime } from "@/lib/catalog";
+import { COLORS, quantityText, relativeTime } from "@/lib/catalog";
+import { currentRates, deriveCost, formatMinutes, formatMoney } from "@/lib/cost";
 import { formatBytes } from "@/lib/models";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
+import { PrintLedger } from "@/components/print-ledger";
+import { SourceBadge } from "@/components/source-badge";
 import { AdminActions } from "@/components/admin-actions";
 import { Conversation } from "@/components/conversation";
 import { ModelViewer } from "@/components/model-viewer";
@@ -40,6 +43,18 @@ export default async function StoryPage({
   // a 403 would confirm it exists.
   const story = await getStoryOr404(storyId, user);
   const owner = await printerName();
+
+  // The ledger is the team's business, so its numbers are fetched only for
+  // the team — a requester's page never even asks the rates table.
+  const isTeamView = user.role === "admin" || user.role === "manager";
+  const rates = isTeamView ? await currentRates(story.material) : null;
+  const cost = rates
+    ? deriveCost(
+        { material: story.material, weightGrams: story.weightGrams, printMinutes: story.printMinutes },
+        rates,
+      )
+    : null;
+  const extraColours = story.additionalColorNames.filter((n) => n.trim() !== "");
 
   const currentIndex = (FLOW as readonly string[]).indexOf(story.status);
 
@@ -103,6 +118,7 @@ export default async function StoryPage({
                 {storyRef(story.id)}
               </span>
               <StatusChip status={story.status} />
+              {story.sourceUrl && <SourceBadge url={story.sourceUrl} />}
               {story.flagged && (
                 <span className="rounded-chip border-2 border-ink bg-cherry px-[11px] py-[3px] font-mono text-[11.5px] font-bold uppercase tracking-[0.06em] text-ink">
                   flagged{story.flagReason ? `: ${story.flagReason}` : ""}
@@ -125,13 +141,28 @@ export default async function StoryPage({
                 <Fact label="Quantity">{quantityText(story.quantity)}</Fact>
                 <Fact label="Material">{story.material}</Fact>
                 <Fact label="Colour wish">
-                  <span className="flex items-center gap-[8.8px]">
-                    <span
-                      aria-hidden
-                      className="h-[18px] w-[18px] rounded-full border-2 border-ink"
-                      style={{ background: story.colorHex }}
-                    />
-                    {story.colorName}
+                  <span className="flex flex-col gap-[6px]">
+                    <span className="flex items-center gap-[8.8px]">
+                      <span
+                        aria-hidden
+                        className="h-[18px] w-[18px] rounded-full border-2 border-ink"
+                        style={{ background: story.colorHex }}
+                      />
+                      {story.colorName}
+                    </span>
+                    {extraColours.map((name) => {
+                      const hex = COLORS.find((c) => c.name === name)?.hex ?? "#eaecee";
+                      return (
+                        <span key={name} className="flex items-center gap-[8.8px]">
+                          <span
+                            aria-hidden
+                            className="h-[18px] w-[18px] rounded-full border-2 border-ink"
+                            style={{ background: hex }}
+                          />
+                          {name}
+                        </span>
+                      );
+                    })}
                   </span>
                 </Fact>
                 <Fact label="On offer">
@@ -152,6 +183,48 @@ export default async function StoryPage({
                   {story.printSettings}
                 </p>
               </div>
+            )}
+
+            {/*
+              The ledger — the team's numbers and the cost derived from them.
+              Hidden from a requester entirely: what a print costs the team is
+              the team's ledger, and the fields are not on the API wire either.
+            */}
+            {isTeamView && rates && (
+              <section className="mt-[17.6px] rounded-panel border-[3px] border-ink bg-cream-2 p-[17.6px]">
+                <div className="mb-[8px] font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-ink-3">
+                  The ledger
+                </div>
+                {cost ? (
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-[17.6px]">
+                    <Fact label="Filament">
+                      {story.weightGrams} g · {formatMoney(cost.filament)}
+                    </Fact>
+                    <Fact label="Machine time">
+                      {formatMinutes(story.printMinutes ?? 0)} · {formatMoney(cost.machine)}
+                    </Fact>
+                    <Fact label="Cost to the team">
+                      <span className="font-display text-[22px] font-bold text-ink">
+                        {formatMoney(cost.total)}
+                      </span>
+                    </Fact>
+                  </div>
+                ) : (
+                  <p className="m-0 text-[14px] leading-[1.5] text-ink-2">
+                    No measurements recorded yet — weigh the print and note the
+                    minutes, and the cost derives itself at {rates.dollarsPerKg.toFixed(2)} $/kg
+                    + {rates.dollarsPerHour.toFixed(2)} $/hour.
+                  </p>
+                )}
+                <PrintLedger
+                  storyId={story.id}
+                  weightGrams={story.weightGrams}
+                  printMinutes={story.printMinutes}
+                  dollarsPerKg={rates.dollarsPerKg > 0 ? rates.dollarsPerKg : null}
+                  dollarsPerHour={rates.dollarsPerHour > 0 ? rates.dollarsPerHour : null}
+                  from={`/story/${story.id}`}
+                />
+              </section>
             )}
 
             <section className="mt-[26.4px]">

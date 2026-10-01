@@ -20,7 +20,7 @@ import { issuePasswordSetupUrl } from "../src/lib/password-reset";
  * Long, and deliberately nonsense: `haveIBeenPwned` refuses anything in a
  * breach corpus, and "correct horse battery staple" is very much in one.
  */
-export const TEST_PASSWORD = "ppp-suite-3d-printer-parked-outside";
+export const TEST_PASSWORD = "printq-suite-3d-printer-parked-outside";
 
 /** Anything with a `raw()` — every suite's cookie-jar Browser qualifies. */
 export type HttpClient = {

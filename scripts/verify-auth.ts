@@ -435,7 +435,7 @@ async function main() {
         /breach|compromis/i.test(await refused.clone().text()),
         "a corpus password was accepted");
 
-  const NEW_PASSWORD = "ppp-suite-second-key-parked-outside";
+  const NEW_PASSWORD = "printq-suite-second-key-parked-outside";
   const stillGood = await (await recovering.go(setUrl)).text();
   check("the link survives a refused password", stillGood.includes('name="password"'),
         "being told to pick another password spent the link");
@@ -542,7 +542,7 @@ async function main() {
         bootstrapPage.includes('name="username"') && bootstrapPage.includes('name="password"'),
         "the bootstrap link did not offer a username field");
 
-  const OWNER_PASSWORD = "ppp-suite-owner-key-parked-outside";
+  const OWNER_PASSWORD = "printq-suite-owner-key-parked-outside";
   const bootstrapped = await owner.submit(bootstrapUrl, bootstrapPage, {
     username: "Ruben",
     password: OWNER_PASSWORD,

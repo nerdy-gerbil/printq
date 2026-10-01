@@ -415,16 +415,16 @@ Shortening the session broke "Open in PrusaSlicer", and the way it broke is
 worth recording because the feature had been quietly depending on the weakness.
 
 The helper runs on somebody's own machine and holds no cookie, so it
-authenticated with `PPP_TOKEN` — a bearer token pasted once into
-`~/.config/ppp/slicer.conf`. A bearer token is the session token, so that file
+authenticated with `PRINTQ_TOKEN` — a bearer token pasted once into
+`~/.config/printq/slicer.conf`. A bearer token is the session token, so that file
 held a **thirty-day, full-authority credential at rest**, revocable only by
 signing out. At twenty idle minutes it simply stopped working: every click
 answered `HTTP 401`.
 
 The fix is not a longer-lived credential in the same place. The link carries
-its own instead — `ppp://slice/<id>?t=…`, minted when the ticket renders, for
+its own instead — `printq://slice/<id>?t=…`, minted when the ticket renders, for
 that person and that model, expiring in half an hour
-(`src/lib/slicer-token.ts`). `PPP_TOKEN` is gone from the installer's template
+(`src/lib/slicer-token.ts`). `PRINTQ_TOKEN` is gone from the installer's template
 and the config now holds nothing but an address.
 
 What the token is, precisely: an HMAC over `version.storyId.userId.expiry`,

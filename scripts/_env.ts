@@ -22,7 +22,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 
-const FILE = process.env.PPP_ENV_FILE ?? ".env";
+const FILE = process.env.PRINTQ_ENV_FILE ?? ".env";
 
 if (existsSync(FILE)) {
   for (const line of readFileSync(FILE, "utf8").split("\n")) {

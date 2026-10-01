@@ -1,11 +1,96 @@
 # Changelog
 
 Notable changes. Every entry names a released version; deployments pin
-`PPP_TAG` to one of these, or to a commit SHA if they follow `main` closely.
+`PRINTQ_TAG` to one of these, or to a commit SHA if they follow `main` closely.
 
 ## Unreleased
 
+### PrintQ - Requests — the fork becomes its own app
+
+This project is now **PrintQ - Requests**, a fork of danileau's Pretty Please
+Print carrying its own name, its own schemas (`printq://` and
+`printq-anycubic://`), its own cookie prefix (`printq.session_token`), its own
+container names (`printq-app`, `printq-migrate`, `printq-db`) and its own
+images at `ghcr.io/nerdy-gerbil`. Everything below is new on top of that
+rename.
+
 ### Added
+
+- **Three roles, unlimited users.** `user` files and follows their own
+  requests; `manager` works the queue beside the admin — accept, print, hand
+  over, flag, decline — reading every ticket but running nothing; `admin`
+  additionally runs the admin surface and is the only role that can change
+  somebody else's role. Roles are changed from the guest list, audited as
+  `user.role_changed`, and guarded: nobody changes their own, and the last
+  admin cannot demote themselves into a shop with no keys. The old
+  single-admin partial index is gone — any number of admins is allowed, and
+  the story scope widened from "the owner sees all" to "the team sees all".
+
+- **First-run `/setup` instead of seeded credentials.** On a fresh database
+  the first person to open `/setup` claims the printer: shop name, email,
+  username, password, all chosen in the browser. No `ADMIN_EMAIL` /
+  `ADMIN_NAME` env pair, no bootstrap link to dig out of the migrator's logs.
+  The page is only routable while the database has no admin at all, and the
+  event is audited as `admin.bootstrapped`.
+
+- **Anycubic Slicer Next (FDM) bridge, beside the PrusaSlicer one.** A second
+  helper (`scripts/anycubic-open.sh`) handles `printq-anycubic://slice/<id>?t=…`
+  links by fetching the model and handing it to a local Anycubic Slicer Next —
+  its own deep links are wired to Makeronline's CDN, so the same local-file
+  design that serves PrusaSlicer serves here too. The installer registers both
+  schemes and both desktop entries; both read one `~/.config/printq/slicer.conf`.
+  Tickets carry both buttons, minting one link credential.
+
+- **Multi-colour requests.** A request may ask for up to three extra colours
+  after the primary, and a ticket's stripe wears every spool it asked for, as
+  bands. Re-queueing carries the extras with the rest of the wish.
+
+- **Source links.** An optional `sourceUrl` on a request — the Makeronline,
+  Printables, MakerWorld, Thingiverse, Cults3D… page the model came from —
+  shown as a badge on the ticket and the queue, matched on the registrable
+  domain so the badge names the shop and not a URL.
+
+- **Materials are owner-managed data.** The catalogue of what a request can be
+  made from moved from a compile-time enum to the `Material` table, edited at
+  `/admin/materials`: add, rename, retire, restore, all audited. Retiring
+  never rewrites a past ticket; the upload form simply stops offering it.
+  The upload's `material` is now free text validated against the live list.
+
+- **A cost ledger, derived not stored.** The print team records what a
+  finished print weighed (grams) and ran (minutes) on the ticket; the app
+  derives the cost at render from the current rates — $/kg per material and
+  one $/hour for the machine, set at `/admin/materials` and `/admin/rates`.
+  Nothing is snapshotted, nothing is inferred, nothing is shown to the
+  requester, and neither the measurements nor the cost are on the API wire.
+
+- **The wishlist.** `/admin/wishlist` is the intake queue for "ooh, print
+  this": paste a product link and the page's own title and picture are
+  fetched once — with hard SSRF guards (https-only, no private or literal
+  hosts, no embedded credentials, capped bodies and timeouts) — and the
+  picture is cached into the models volume, served back through a
+  session-checked route. Dedupe by URL, source badges, notes, and an audit
+  trail on add and remove.
+
+- **Webhooks.** Set `WEBHOOK_URL` and every notification the print team
+  receives is also POSTed as `{ "text": … }` — the shape Discord and Slack
+  webhook URLs accept without configuration. Fire-and-forget with a five-
+  second timeout: a down chat relay never blocks the queue.
+
+- **`docker-compose.dokploy.yml`.** A PaaS-style template for hosts that build
+  from a repository: builds the images, migrates before the app starts via
+  `service_completed_successfully`, publishes :3000 for the platform edge,
+  and hardcodes no domain — `APP_URL` drives everything.
+
+### Changed
+
+
+- **Rocket Loader has to be off, and the docs now say so.** Reported by NelsonFx
+  on the pull request that added the tunnel overlay, and it is the first thing an
+  orange-clouded deployment hits. Cloudflare's Rocket Loader rewrites every
+  `<script>` to load through its own deferred loader, and the rewritten tags do
+  not carry the per-request nonce that `script-src 'self' 'nonce-…'
+  'strict-dynamic'` requires — so hydration never happens and no client-side code
+  runs at all.
 
 - **Rocket Loader has to be off, and the docs now say so.** Reported by NelsonFx
   on the pull request that added the tunnel overlay, and it is the first thing an
