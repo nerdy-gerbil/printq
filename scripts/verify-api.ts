@@ -427,7 +427,7 @@ async function main() {
   check("a ticket already being printed cannot be withdrawn",
         tooLate.status === 409, `status ${tooLate.status} ${tooLate.body.error}`);
   check("and the reason names who to ask",
-        (tooLate.body.error ?? "").includes(admin.name.split(" ")[0]!), tooLate.body.error);
+        (tooLate.body.error ?? "").includes("print team"), tooLate.body.error);
 
   // ------------------------------------------------------------------
   section("the conversation");
