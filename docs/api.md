@@ -211,7 +211,13 @@ npx @openapitools/openapi-generator-cli generate -i openapi.json -g typescript-f
 
 ## What is not here
 
-- **No webhooks.** Nothing calls out. If you want to know when a ticket moves,
+- **No webhooks on this API.** These endpoints never call out, and there is no
+  webhook endpoint to configure here. The app itself can mirror notifications:
+  set `WEBHOOK_URL` and every notification that reaches a recipient's in-app
+  Activity feed is also POSTed to that URL as `{ "content": …, "text": … }` —
+  Discord reads `content`, Slack reads `text`, and each ignores the other's
+  field — fire-and-forget with a five-second timeout, so a down chat relay
+  never blocks the queue. If you want to know when a ticket moves without one,
   poll `/api/notifications`.
 - **No bulk endpoints.** Five people and one printer; a loop is fine.
 - **No API keys, scopes or service accounts.** Every call is made *as* a

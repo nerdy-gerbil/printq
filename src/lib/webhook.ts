@@ -27,9 +27,9 @@ export function postWebhook(text: string): void {
   const url = process.env.WEBHOOK_URL;
   if (!url) return;
 
-  // Discord takes { content }, Slack's legacy incoming webhook takes { text }.
-  // Discord accepts { text } too, so one shape serves both.
-  const body = JSON.stringify({ text });
+  // Discord reads `content`; Slack's legacy incoming webhook reads `text`.
+  // Each platform ignores the other's field, so one body serves both.
+  const body = JSON.stringify({ content: text, text });
 
   fetch(url, {
     method: "POST",

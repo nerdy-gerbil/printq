@@ -41,7 +41,9 @@
     "verify:queue": "tsx scripts/verify-queue.ts",
     "verify:frr": "tsx scripts/verify-frr.ts",
     "verify:benefits": "tsx scripts/verify-benefits.ts",
+    "verify:wishlist": "tsx scripts/verify-wishlist.ts",
     "verify:api": "tsx scripts/verify-api.ts",
+    "verify:cost": "tsx scripts/verify-cost.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts",
     "migrate:storage": "tsx scripts/export-storage.ts"
   },

@@ -69,12 +69,15 @@ rename.
   hosts, no embedded credentials, capped bodies and timeouts) — and the
   picture is cached into the models volume, served back through a
   session-checked route. Dedupe by URL, source badges, notes, and an audit
-  trail on add and remove.
+  trail on add and remove. `verify:wishlist` covers it (50 checks) — every
+  guard refusal (each fires before a fetch), the one real fetch, dedupe with
+  its orphan cleanup, the thumbnail route and the audit trail, over HTTP.
 
 - **Webhooks.** Set `WEBHOOK_URL` and every notification the print team
-  receives is also POSTed as `{ "text": … }` — the shape Discord and Slack
-  webhook URLs accept without configuration. Fire-and-forget with a five-
-  second timeout: a down chat relay never blocks the queue.
+  receives is also POSTed as `{ "content": …, "text": … }` — Discord
+  reads `content`, Slack reads `text`, and each ignores the other's
+  field, so one body serves both without configuration. Fire-and-forget
+  with a five-second timeout: a down chat relay never blocks the queue.
 
 - **`docker-compose.dokploy.yml`.** A PaaS-style template for hosts that build
   from a repository: builds the images, migrates before the app starts via
@@ -83,14 +86,6 @@ rename.
 
 ### Changed
 
-
-- **Rocket Loader has to be off, and the docs now say so.** Reported by NelsonFx
-  on the pull request that added the tunnel overlay, and it is the first thing an
-  orange-clouded deployment hits. Cloudflare's Rocket Loader rewrites every
-  `<script>` to load through its own deferred loader, and the rewritten tags do
-  not carry the per-request nonce that `script-src 'self' 'nonce-…'
-  'strict-dynamic'` requires — so hydration never happens and no client-side code
-  runs at all.
 
 - **Rocket Loader has to be off, and the docs now say so.** Reported by NelsonFx
   on the pull request that added the tunnel overlay, and it is the first thing an
@@ -437,11 +432,11 @@ rename.
   the object store, so the sentence now keeps the reason that survived and notes
   which one did not. `release-images.yml` also publishes a third image now.
 
-  Counts that had drifted: **nine** suites, not eight, in both the README and
+  Counts that had drifted: **ten** suites, not nine, in both the README and
   CONTRIBUTING — and CONTRIBUTING's claim that all of them run against the built
   image was never quite true, since `verify:models` is a pure-function test in its
   own gate. `probe:security` is **120** probes, not 103; `verify:models` is 32
-  checks, not 29; `verify` runs eight integration suites, not five; and `guard`
+  checks, not 29; `verify` runs nine integration suites, not five; and `guard`
   runs three cheap gates, not two.
 
 

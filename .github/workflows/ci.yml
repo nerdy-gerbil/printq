@@ -138,12 +138,24 @@ jobs:
       # rendering the list + preferences, and server-side tip validation.
       - name: Benefits, owner-managed
         run: npm run verify:benefits
+      # The wishlist intake queue: the guard table needs no network (every
+      # refusal fires before the first fetch), then the real fetch path —
+      # Wikipedia's og:title and cached picture, the session-checked
+      # thumbnail route, dedupe with orphan cleanup and the audit trail.
+      - name: Wishlist intake, guards to audit trail
+        run: npm run verify:wishlist
       # The second front door onto the same operations. Runs against the built
       # image, which is the only place the production CSP is in force — the
       # console's inline-script nonce and its stylesheet-in-a-file are both
       # things that render a page either way and only *work* under that policy.
       - name: The JSON API, the OpenAPI document and the console
         run: npm run verify:api
+      # The cost ledger: recording the measurements, deriving money at
+      # the owner-managed rates (re-derived on every read, never
+      # snapshotted), and the promise that none of it — grams, minutes
+      # or dollars — reaches the JSON API.
+      - name: The cost ledger, derived and off the wire
+        run: npm run verify:cost
 
       # Registering and using a passkey is a browser ceremony — it cannot be
       # tested with fetch. The runner ships Chrome; a CDP virtual authenticator

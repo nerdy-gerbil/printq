@@ -38,7 +38,9 @@ npm run verify:upload         # upload -> board -> story, end to end
 npm run verify:queue          # the admin queue, status flow and conversation
 npm run verify:frr            # the feature-request track (file, triage, the flow)
 npm run verify:benefits       # the owner-managed benefits (tip) catalogue
+npm run verify:wishlist       # the wishlist: SSRF guards, dedupe, thumbnails, audit
 npm run verify:api            # the JSON API, the OpenAPI document and the console
+npm run verify:cost           # the cost ledger: record, derive, stay off the wire
 npm run verify:passkey        # WebAuthn ceremonies in a real browser
 npm run probe:security        # 120 OWASP-mapped security probes
 ```
@@ -74,7 +76,7 @@ as four gates that can be required by name in branch protection:
 | --- | --- |
 | `guard` | typecheck, the secret scanner over every tracked file, and the markdown link check |
 | `models` | the upload validator against hostile fixtures — no server needed |
-| `verify` | raises the real compose stack and runs all eight integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
+| `verify` | raises the real compose stack and runs all ten integration suites against the built image, **including the WebAuthn ceremonies in a headless Chrome** |
 | `trivy` | filesystem scan for vulnerabilities, secrets and misconfiguration; HIGH/CRITICAL fail |
 
 `verify` uses docker compose rather than GitHub `services:` so that running the

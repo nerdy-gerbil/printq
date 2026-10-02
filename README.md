@@ -100,8 +100,9 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   Swagger console at `/docs`. Same session, same scope, same audit trail as
   the UI. See **[the API](docs/api.md)**.
 - **Shout it to chat** — set `WEBHOOK_URL` and every notification the print
-  team receives is also POSTed as `{ "text": … }` to a Discord or Slack
-  webhook. Fire-and-forget; a down relay never blocks the queue.
+  team receives is also POSTed as `{ "content": …, "text": … }` to a
+  Discord or Slack webhook (each reads its own field and ignores the
+  other). Fire-and-forget; a down relay never blocks the queue.
 - **Open a model straight in a slicer** — one click on a ticket hands the
   model to **PrusaSlicer** or **Anycubic Slicer Next (FDM)** running on your
   own machine. A small helper the admin installs once does the fetch, because
@@ -184,7 +185,7 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | `SMTP_URL` | | SMTP transport. **Leave unset and the app still works** — links are shown to the admin to hand over. |
 | `RESEND_API_KEY` | | Alternative to `SMTP_URL`; takes precedence. |
 | `MAIL_FROM` | | Envelope sender. |
-| `WEBHOOK_URL` | | POST every print-team notification as `{ "text": … }` — a Discord or Slack webhook URL. Fire-and-forget. |
+| `WEBHOOK_URL` | | POST every print-team notification as `{ "content": …, "text": … }` — a Discord or Slack webhook URL; each platform reads its own field. Fire-and-forget. |
 | `TRUST_PROXY_HEADERS` | | Which header carries the client address: `false` (trust nothing, the default), `true` (left-most `X-Forwarded-For`), or `cloudflare` (`CF-Connecting-IP`). See [the reasoning](docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch). |
 | `HIBP_DISABLED` | | `true` disables the breach check. Only for a host with no outbound internet — it fails closed, so without it nobody could register. |
 | `SOURCE_URL` | | Where this instance's source lives, shown in the footer. **Change it if you modify the code** — see [Licence](#licence). Defaults to the upstream repository. |
@@ -415,7 +416,7 @@ has no outbound internet, set `HIBP_DISABLED=true` — and only then.
 | **[Development](docs/development.md)** | stack, local setup, the verification suites, CI |
 | **[Security audit](docs/security-audit.md)** | the OWASP Top 10 assessment, findings, and residual risk accepted |
 | **[Security policy](SECURITY.md)** | how to report a vulnerability |
-| **[Contributing](CONTRIBUTING.md)** | the nine suites are the contract; what a good change looks like |
+| **[Contributing](CONTRIBUTING.md)** | the ten suites are the contract; what a good change looks like |
 | **[Changelog](CHANGELOG.md)** | what changed in each release |
 
 ## Security
@@ -446,12 +447,12 @@ something, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-Issues and pull requests are welcome. The nine verification suites in
+Issues and pull requests are welcome. The ten verification suites in
 `scripts/` are the contract — `verify:models`, `verify:auth`, `verify:upload`,
-`verify:queue`, `verify:frr`, `verify:benefits`, `verify:api`, `verify:passkey`
-and `probe:security`. All but `verify:models` run in CI against the built
-container image rather than a dev server. If a change makes one fail, that is the
-change talking.
+`verify:queue`, `verify:frr`, `verify:benefits`, `verify:wishlist`, `verify:api`,
+`verify:passkey` and `probe:security`. All but `verify:models` run in CI against
+the built container image rather than a dev server. If a change makes one fail,
+that is the change talking.
 
 See [docs/development.md](docs/development.md) to get set up.
 
