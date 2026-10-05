@@ -111,9 +111,11 @@ GitHub repository with automatic builds:
    MAX_REQUEST_BYTES=262144000                      # 250 MB in bytes
    TRUST_PROXY_HEADERS=<false|true|cloudflare>      # see the table below
 
-   If you instead convert the app to MySQL, DATABASE_URL uses the MySQL flavour (`mysql://…`), the
-   schema is regenerated against the `mysql` provider, and migrations run against MySQL — not the
-   Postgres-flavoured string above. The app otherwise reads the same env variables.
+   If you convert the app to MySQL, `DATABASE_URL` uses the MySQL flavour (`mysql://…`), the schema
+   is regenerated against the `mysql` provider, migrations run against MySQL, and the Better Auth
+   adapter is told `provider: "mysql"`. The app otherwise reads the same env variables. The four pins
+   that carry this conversion are: `prisma/schema.prisma`, `prisma/migrations/migration_lock.toml`,
+   `src/lib/auth.ts`, and wherever `DATABASE_URL` is set.
    ```
 
    `MODELS_ROOT` points at a real writable directory inside your Hostinger domain tree. Use the

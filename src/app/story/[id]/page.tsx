@@ -54,7 +54,7 @@ export default async function StoryPage({
         rates,
       )
     : null;
-  const extraColours = story.additionalColorNames.filter((n) => n.trim() !== "");
+  const extraColours = (Array.isArray(story.additionalColorNames) ? story.additionalColorNames : []).filter((n) => typeof n === "string" && n.trim() !== "");
 
   const currentIndex = (FLOW as readonly string[]).indexOf(story.status);
 
@@ -151,15 +151,16 @@ export default async function StoryPage({
                       {story.colorName}
                     </span>
                     {extraColours.map((name) => {
-                      const hex = COLORS.find((c) => c.name === name)?.hex ?? "#eaecee";
+                      const nm: string = typeof name === "string" ? name : "";
+                      const hex = COLORS.find((c) => c.name === nm)?.hex ?? "#eaecee";
                       return (
-                        <span key={name} className="flex items-center gap-[8.8px]">
+                        <span key={nm} className="flex items-center gap-[8.8px]">
                           <span
                             aria-hidden
                             className="h-[18px] w-[18px] rounded-full border-2 border-ink"
                             style={{ background: hex }}
                           />
-                          {name}
+                          {nm}
                         </span>
                       );
                     })}

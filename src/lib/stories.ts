@@ -595,7 +595,7 @@ export async function requeueStory(actor: Actor, id: number) {
       material: src.material,
       colorName: src.colorName,
       colorHex: src.colorHex,
-      additionalColorNames: src.additionalColorNames,
+      additionalColorNames: Array.isArray(src.additionalColorNames) ? src.additionalColorNames : [],
       tip: src.tip,
       note: src.note,
       printSettings: src.printSettings,

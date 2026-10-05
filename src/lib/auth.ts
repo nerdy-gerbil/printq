@@ -66,7 +66,7 @@ export const auth = betterAuth({
   appName: "PrintQ - Requests",
   baseURL,
   secret: process.env.BETTER_AUTH_SECRET,
-  database: prismaAdapter(db, { provider: "postgresql" }),
+  database: prismaAdapter(db, { provider: "mysql" }),
 
   /**
    * Username and password is how people get in.

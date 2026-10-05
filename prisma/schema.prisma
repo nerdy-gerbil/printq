@@ -11,7 +11,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -276,10 +276,12 @@ model Story {
   colorHex  String
 
   /// Extra colours for a multi-colour print (AMS/MMU/manual filament swap),
-  /// beyond the primary colorName/colorHex above. Plain array of catalogue
-  /// names — short (capped at 3 extra), never queried on its own, and a join
-  /// table would only earn its keep past that scale.
-  additionalColorNames String[] @default([])
+  /// beyond the primary colorName/colorHex above. Short (capped at 3 extra),
+  /// never queried on its own. Stored as JSON on MySQL (Prisma does not support
+  /// a list of primitives there); on Postgres the same field would be a TEXT[] —
+  /// but this schema is now mysql-pinned, so the column is JSON everywhere the
+  /// generated client is used from this schema.
+  additionalColorNames Json @default("[]")
 
   /// Where the model came from, if not made by the requester — a Makeronline,
   /// Printables, MakerWorld or Thingiverse URL, say. No fetching happens
