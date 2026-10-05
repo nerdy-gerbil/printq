@@ -58,10 +58,21 @@ Hostinger's proxy must allow, the TLS and the Cloudflare Tunnel option — is th
   Plus the managed Postgres connection details (host, port, database, user, password) and the
   external Postgres host's allow-list, so Hostinger's outbound address can reach it.
 
-## First: get Postgres out of the way
+## First: choose the database — and be honest about MySQL
 
 On the VPS path the app runs its own Postgres container. On Business, it does not — and cannot — so
-the database is a separate piece you provision first.
+the database is a separate piece you bring from elsewhere.
+
+Hostinger Business gives you **MySQL**, with phpMyAdmin. That is a real database, but it is not what
+this app is built for: the project's schema is pinned to the **PostgreSQL** provider in
+`prisma/schema.prisma`, and Prisma generates a Postgres client from it. MySQL is only a viable option
+here if you are willing to convert the app to the `mysql` provider — rewrite the datasource, regenerate
+the Prisma client, run a MySQL migration, and re-verify every query. For an app this size that is a
+schema-and-migration project, not a configuration change, and it changes the contract the project is
+built on. If you want that route, say so and I will scope it; otherwise treat MySQL on the plan as a
+bonus database for other apps and keep this one on Postgres.
+
+The path that keeps the existing code untouched is a **managed Postgres** from elsewhere:
 
 1. **Create a managed Postgres** somewhere that gives you a connection URL and lets you add
    Hostinger's outbound IP to an allow-list (or allow-list `0.0.0.0/0` if you accept the trade).
@@ -93,12 +104,16 @@ GitHub repository with automatic builds:
    ```
    NODE_ENV=production
    BETTER_AUTH_SECRET=<the 32-byte secret>
-   DATABASE_URL=postgresql://printq:…@managed-host:5432/printq?schema=public
+   DATABASE_URL=postgresql://printq:…@managed-host:5432/printq?schema=public   # see the MySQL note below
    BETTER_AUTH_URL=https://print.example.org        # your real hostname
    PASSKEY_RP_ID=print.example.org                  # permanent; see below
    MODELS_ROOT=/home/.../domains/.../public_html/uploads   # or wherever Hostinger serves uploads
    MAX_REQUEST_BYTES=262144000                      # 250 MB in bytes
    TRUST_PROXY_HEADERS=<false|true|cloudflare>      # see the table below
+
+   If you instead convert the app to MySQL, DATABASE_URL uses the MySQL flavour (`mysql://…`), the
+   schema is regenerated against the `mysql` provider, and migrations run against MySQL — not the
+   Postgres-flavoured string above. The app otherwise reads the same env variables.
    ```
 
    `MODELS_ROOT` points at a real writable directory inside your Hostinger domain tree. Use the
@@ -120,7 +135,7 @@ In both cases Hostinger manages the long-lived server; you do not keep a termina
 
 ## After deploy: claim the printer
 
-Once the app is live and `DATABASE_URL` points at a real Postgres:
+Once the app is live and `DATABASE_URL` points at a real database (Postgres in the managed-Postgres path, or MySQL if you converted the schema):
 
 1. Open **`https://your-host.example/setup`** once in a browser.
 2. Claim the printer — shop name, email, username, password. No admin variable, no bootstrap link.
