@@ -8,9 +8,9 @@
 | --- | --- |
 | Framework | Next.js 15 (App Router), React 19, TypeScript |
 | Auth | [Better Auth](https://better-auth.com) 1.7 — username/password, passkeys, breach check, admin plugin |
-| Data | Prisma 6 → PostgreSQL 17 |
+| Data | Prisma 6 — MySQL backend (the Hostinger Business path and the DB-agnostic app); the VPS/compose stack, CI and the local dev stack still run their own Postgres container |
 | Styling | Tailwind v4, design tokens from the handoff as CSS variables |
-| Local infra | Docker Compose: Postgres, Mailpit (mail). Model files go to `./data/uploads` — there is no storage service |
+| Local infra | Docker Compose: Postgres (the compose/dev/CI path), Mailpit (mail). Model files go to `./data/uploads` — there is no storage service |
 
 Chosen to match the existing house style (`huere-siech` is Next 15 + Prisma,
 `danileau.com` is React + TS + Tailwind) and the handoff's own suggested stack.

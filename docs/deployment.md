@@ -5,7 +5,9 @@
 ## Running it in containers
 
 The dev stack (`docker-compose.yml`) runs Postgres and Mailpit while the app runs
-on the host under `npm run dev`. That is the loop for building. Model files go to
+on the host under `npm run dev`. That is the loop for building. (The app's schema is now pinned to the
+`mysql` provider — the Hostinger Business path runs MySQL; the compose/dev/CI path still runs its own
+Postgres container. Both are valid ways to run the same app.) Model files go to
 `./data/uploads`; there is no storage service to run.
 
 `docker-compose.prod.yml` runs **everything**, including the app, and is also

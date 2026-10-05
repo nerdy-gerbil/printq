@@ -119,7 +119,7 @@ that: there is no multi-tenancy, no billing, and no queue theory.
 | | |
 | --- | --- |
 | Host | anything that runs Docker Compose on **`linux/amd64`** — a NAS, an x86 VPS, a spare laptop. **Not arm64.** The published `printq-app` and `printq-migrate` images are built for amd64 only, and a second architecture would have to be verified rather than merely built — the suites are this project's contract, and running them twice is not a commitment it makes. An arm64 host (a Pi 5, an Ampere VPS, an Apple Silicon Mac) fails at `docker compose pull` with `no matching manifest for linux/arm64`. |
-| Memory | ~1 GB for the whole stack (app, Postgres) |
+| Memory | ~1 GB for the whole stack (app, database) |
 | Disk | small — the database is megabytes; uploads are capped at 250 MB each |
 | TLS | **required.** The app refuses to start on plain `http://` in production, and passkeys need a secure context |
 | Mail | **optional.** Nothing needs it — see [Mail is optional](docs/authentication.md#mail-is-optional--genuinely) |
@@ -177,7 +177,7 @@ with commentary is [`.env.docker.example`](.env.docker.example).
 | Variable | Required | What it does |
 | --- | --- | --- |
 | `BETTER_AUTH_SECRET` | **yes** | Signs session cookies and slicer-link credentials. `openssl rand -base64 32`. Losing it invalidates every session. |
-| `DB_PASSWORD` | **yes** | Postgres password. Baked into the data directory on first start — see [Restore](#restore). |
+| `DB_PASSWORD` | **yes** | Database password. For the MySQL on Hostinger Business path, the MySQL user password; for the VPS/compose path, the Postgres password that the compose stack bakes into its data directory on first start — see [Restore](#restore). |
 | `APP_URL` | **yes** | The origin the browser sees, including scheme. Cookies, invitation links and the WebAuthn relying party derive from it. Must be `https://` in production. |
 | `PASSKEY_RP_ID` | **yes** | Registrable domain, no scheme or port. **Permanent** — changing it kills every enrolled passkey. |
 | `PASSKEY_RP_NAME` | | Shown in the browser's passkey prompt. |
@@ -241,8 +241,8 @@ Everything that matters is under `DATA_ROOT` plus one file:
 
 | | |
 | --- | --- |
-| `$DATA_ROOT/db/` | Postgres — accounts, tickets, comments, the audit trail |
-| `$DATA_ROOT/uploads/` | the uploaded `.stl` / `.3mf` files **and** the cached wishlist thumbnails, as plain files |
+| `$DATA_ROOT/db/` | **VPS/compose path only:** the Postgres data directory. On Hostinger Business the database is the MySQL database Hostinger gives you — not a folder on disk — so there is nothing under `DATA_ROOT/db/` to back up there. |
+| `$DATA_ROOT/uploads/` | the uploaded `.stl` / `.3mf` files **and** the cached wishlist thumbnails, as plain files — on every path |
 | `$DATA_ROOT/models/` | **only if you have not migrated yet** — the old object store's data directory. Plain `tar` cannot read it usefully; see [Deployment](docs/deployment.md). |
 | `.env.docker` | the secrets. **Not** under `DATA_ROOT`, and not in the repo. |
 

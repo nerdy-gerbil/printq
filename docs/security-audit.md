@@ -527,7 +527,9 @@ One finding worth the exercise on its own: the Postgres data directory is mode
 cannot read it, and one taken with `sudo` that flattens ownership produces an
 archive Postgres refuses to start from. On ZFS a snapshot sidesteps this
 entirely; elsewhere the copy has to be made from inside a container, which the
-README now says.
+README now says. (This is a VPS/compose concern — on the Hostinger Business MySQL path there is no
+Postgres data directory to back up that way; the database is the MySQL database Hostinger gives you,
+\nand it is backed up through Hostinger's own tooling.)
 
 ## Open items
 
