@@ -1,13 +1,32 @@
-// DATABASE_URL is a URL, not a problem-specific variable.
-// The only secret that lives separately is DB_PASSWORD, and that exists because
-// docker-compose.prod.yml interpolates it into a URL rather than because the app
-// needs it whole. HOST_DB_NAME is the one new variable worth adding, and only so
-// a Hostinger Business MySQL database — which Hostinger names `{account}_{name}`, not
-// plain `printq` — can be pointed at without putting that long name into a URL.
+// DATABASE_URL may be supplied directly (compose/docker path). When it is not,
+// the Hostinger Business MySQL path supplies the four parts and we assemble the URL.
+
+function buildHostingerUrl() {
+  const host = process.env.DB_HOST;
+  const name = process.env.DB_NAME;
+  const user = process.env.DB_USER;
+  const pass = process.env.DB_PASSWORD;
+  if (!host || !name || !user || !pass) {
+    const missing = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"].filter(
+      (k) => !process.env[k],
+    );
+    throw new Error(
+      `DATABASE_URL is not set, and the Hostinger MySQL path is incomplete.\r\n` +
+        `Set DATABASE_URL, or set all of: ${missing.join(", ")}`,
+    );
+  }
+  return `mysql://${user}:${pass}@${host}:3306/${name}`;
+}
+
+function resolveDatabaseUrl() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  return buildHostingerUrl();
+}
 
 export function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
+    const missing = [name];
     throw new Error(
       `Environment variable not found: ${name}\n` +
         `Set ${name} in your .env file or environment before running this script.`,
@@ -16,4 +35,4 @@ export function requireEnv(name: string): string {
   return value;
 }
 
-export const DATABASE_URL = requireEnv("DATABASE_URL");
+export const DATABASE_URL = resolveDatabaseUrl();
