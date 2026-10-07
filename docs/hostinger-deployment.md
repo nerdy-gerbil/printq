@@ -2,9 +2,9 @@
 
 Your plan is **Hostinger Business Web Hosting**, which runs Node.js apps through Hostinger's
 managed Node runtime — a built-in deployment pipeline (GitHub sync or zip upload), automatic builds,
-and a Restart button in the dashboard — **not** a VPS with Docker and root access. The [guide I
-wrote first](docs/hostinger-deployment.md) is for Hostinger's VPS tier; this is the one that
-matches the plan you actually have.
+and a Restart button in the dashboard — **not** a VPS with Docker and root access. The
+[plain-VPS path](deployment.md#deploying-to-a-plain-vps) is for Hostinger's VPS tier instead; this is
+the one that matches the plan you actually have.
 
 The app can run here. The one thing that is different from the VPS path is the database: Hostinger
 Business gives you **MySQL with phpMyAdmin**, and the app now runs on MySQL — the schema is pinned to
@@ -98,6 +98,7 @@ GitHub repository with automatic builds:
 
    ```
    NODE_ENV=production
+   NPM_CONFIG_INCLUDE=dev                                      # npm, not the app: install devDependencies too
    BETTER_AUTH_SECRET=<the 32-byte secret>
    DATABASE_URL=mysql://printq:password@host:3306/printq        # MySQL — the Hostinger database
    BETTER_AUTH_URL=https://print.example.org                   # your real hostname
@@ -117,6 +118,10 @@ GitHub repository with automatic builds:
    path Hostinger's File Manager shows for the domain's `public_html` or a sibling `uploads` folder
    you create there; that directory is where uploaded models land and where the standalone server
    reads them from. It is backed up through the File Manager like any other directory.
+
+   `NPM_CONFIG_INCLUDE=dev` is not read by the app at all — it is an instruction to npm, and the
+   build does not work without it. The section after the deploy steps is the whole story.
+
 6. **Deploy.** Hostinger builds, produces the standalone server under `hbuilds/current/nodejs`, and
    serves it. Use the **Restart** button in the app dashboard if a rebuild doesn't pick up a changed
    env variable.
@@ -129,6 +134,80 @@ GitHub repository with automatic builds:
 4. Set the same environment variables and deploy.
 
 In both cases Hostinger manages the long-lived server; you do not keep a terminal open.
+
+## `NODE_ENV=production` hides the build's own dependencies
+
+This is the one failure on this host that looks like a bug in this repository, so it gets its own
+section.
+
+`npm install` skips `devDependencies` whenever `NODE_ENV=production` is set — npm's `production`
+config defaults to it, and the app's whole environment is in place while Hostinger builds. The
+install step therefore installs roughly half the tree, and the build then dies on the first tool
+that is missing, naming the tool and nothing else:
+
+```
+==> Installing dependencies
+Running "npm install"
+added 115 packages, and audited 116 packages in 14s
+
+==> Building
+Running "npm run build"
+
+> printq@0.1.0 prebuild
+> npm run vendor:swagger
+
+sh: line 1: tsx: command not found
+ERROR: Failed to build the application
+```
+
+`tsx` is a devDependency, and so are the Prisma CLI, TypeScript, Tailwind and the `@types`
+packages — every one of them needed to **build** the app, none of them needed to **run** it. The
+compose path never meets this, because the Dockerfile's builder stage runs a full `npm ci`; that is
+also why nothing in this repository had to care about it until this host.
+
+`NPM_CONFIG_INCLUDE=dev` is the fix. It is npm's own `include` config, set in the environment npm
+reads it from, and it outweighs the `production` default without touching it — `NODE_ENV=production`
+still has to stay, because the app wants it. You can see it worked in the next build log: the
+install line reads **about 195 packages** instead of 115.
+
+If it does not take effect — a host is free to pass `npm install` flags of its own, and flags beat
+environment variables — put the install in the build command instead and leave the rest of the
+command alone:
+
+```
+npm install --include=dev && npm run build
+```
+
+Either way the build is the same build CI runs; what changes is only which half of the dependency
+tree is present while it runs. `scripts/check-build-deps.mjs` also runs first in `prebuild` now, so
+a tree that is missing any of these is told what is missing and which command installs it, rather
+than `tsx: command not found`.
+
+## The database needs its tables, and nothing here applies them for you
+
+The compose path has a **migrator** one-shot that runs `prisma migrate deploy` and the seed before
+the app may start, so a deployment can never serve against an unmigrated schema. Hostinger runs the
+app and nothing else, so the schema is a one-time step you run yourself, from a checkout of this
+repository, against the Hostinger database:
+
+```bash
+export DATABASE_URL='mysql://printq:password@host:3306/printq'
+npx prisma migrate deploy
+npx tsx prisma/seed.ts
+```
+
+Those are the same two commands the migrator's `CMD` runs, in the same order. `migrate deploy`
+applies the migrations in `prisma/migrations/` and records them in `_prisma_migrations`, so a second
+run is a no-op — which is why it is the subcommand to reach for and `migrate dev` is not. The seed
+is idempotent and non-destructive: it adds the default benefits, materials and cost rates and never
+overwrites a row the owner has already edited.
+
+The catch is reaching the database from outside Hostinger. Business MySQL is normally closed to the
+internet until you allow your own IP in the database section of the dashboard; a connection that
+**times out** rather than being refused is that allowlist, not the password.
+
+Until the tables exist, every page answers with Prisma's P2021 — *the table does not exist in the
+current database* — and `/setup` is not excepted.
 
 ## After deploy: claim the printer
 
@@ -212,7 +291,7 @@ On Hostinger that means the **VPS tier**, not Business Web Hosting. If you are o
 docker compose path, the move is:
 
 1. Provision a Hostinger VPS (Ubuntu 24.04 with Docker, or any VPS where you can run the compose stack).
-2. Follow the [plain VPS path](docs/deployment.md#deploying-to-a-plain-vps) there.
+2. Follow the [plain VPS path](deployment.md#deploying-to-a-plain-vps) there.
 3. Migrate: dump the managed Postgres, restore it into the VPS Postgres container, copy the
    `uploads/` directory over, deploy the compose stack, and cut the hostname over.
 

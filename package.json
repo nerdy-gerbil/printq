@@ -17,7 +17,7 @@
   "scripts": {
     "predev": "npm run vendor:swagger",
     "dev": "next dev",
-    "prebuild": "npm run vendor:swagger",
+    "prebuild": "node scripts/check-build-deps.mjs && npm run vendor:swagger",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",

@@ -628,6 +628,46 @@ rename.
 
 ### Fixed
 
+- **A host that installs production dependencies only could not build this app,
+  and said `tsx: command not found` when it tried.** `npm install` skips
+  devDependencies whenever `NODE_ENV=production` — npm's own `production` config
+  defaults to it — and Hostinger Business is handed the app's environment while
+  it builds. The deploy installed 115 packages instead of 195, and so had no
+  Prisma CLI, no TypeScript, no Tailwind and no `tsx`. The build died on the
+  first of them, in `prebuild`, naming the tool and nothing else: which reads
+  like a typo in `package.json` rather than half a dependency tree the platform
+  chose not to install. Nothing in this repo had to care before, because the
+  Dockerfile's builder stage runs a full `npm ci`.
+
+  The fix is one variable on the host — `NPM_CONFIG_INCLUDE=dev`, npm's own
+  `include` config, which outweighs the `production` default without touching
+  `NODE_ENV` — and `docs/hostinger-deployment.md` now sets it in the environment
+  block and explains the failure it prevents. `scripts/check-build-deps.mjs`
+  runs first in `prebuild` as well, so a tree missing any of the ten packages the
+  build reaches for is told what is missing, where it is reached, and which
+  command or variable installs it. Measured rather than guessed:
+  `NODE_ENV=production npm install` omits the dev half on npm 10. An `.npmrc`
+  carrying `include=dev` was considered and rejected, because it also quietly
+  defeats an explicit `--omit=dev`.
+
+- **The Hostinger guide never said who applies the migrations.** The compose path
+  has a migrator one-shot and the app waits on it; Hostinger runs the app and
+  nothing else, so the tables had to be created by hand and no document said so —
+  `/setup` would have answered P2021 on a deployment that looked successful. The
+  guide now gives the two commands the migrator's `CMD` runs, in the same order,
+  and the reason a connection that times out is the database's IP allowlist
+  rather than the password.
+
+
+- **Two links in the Hostinger guide pointed at paths that do not exist — one at
+  the guide's own filename.** The document began life as the VPS guide and was
+  rewritten in place for Business hosting, and its opening line still sent you to
+  "the guide I wrote first" at `docs/hostinger-deployment.md`: itself, resolved
+  from inside `docs/`, which is `docs/docs/`. Both it and the "plain VPS path"
+  link now resolve, and `check:links` — the gate this repository added because
+  documentation links rot silently — is green on `main` again, which it had not
+  been.
+
 - **The board and the header at phone width.** A card title long enough to wrap
   overflowed its card on `/board`, and the shared header did not fit a narrow
   viewport. Shipped in August and never written down here — found while checking
