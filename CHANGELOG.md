@@ -628,6 +628,16 @@ rename.
 
 ### Fixed
 
+- **Hostinger MySQL now works from `DB_HOST`, `DB_NAME`, `DB_USER` and `DB_PASSWORD`**
+  instead of requiring the user to build and paste a full `DATABASE_URL` into the panel.
+  Hostinger Business MySQL databases are named `{account}_{name}`, which does not fit the
+  plain `database` part of a URL cleanly, so the app now reads the four MySQL connection
+  parts and assembles `mysql://DB_USER:DB_PASSWORD@DB_HOST:3306/DB_NAME` itself before
+  `PrismaClient` is constructed - in both `src/lib/db.ts` and `scripts/_env.ts`. When
+  `DATABASE_URL` is already set, the old behaviour is preserved; when it is not, the four
+  variables are used. `docs/hostinger-deployment.md` and `.env.docker.example` were updated
+  to document this path instead of the full-URL-in-panel wording.
+
 - **A host that installs production dependencies only could not build this app,
   and said `tsx: command not found` when it tried.** `npm install` skips
   devDependencies whenever `NODE_ENV=production` — npm's own `production` config

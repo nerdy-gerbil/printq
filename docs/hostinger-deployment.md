@@ -42,26 +42,27 @@ Hostinger's proxy must allow, the TLS and the Cloudflare Tunnel option — is th
 
 - **MySQL from Hostinger.** Business Web Hosting includes a free MySQL database with phpMyAdmin.
   Create one in the Hostinger dashboard, note the connection details (host, port, database name, user,
-  password), and build a `DATABASE_URL` of the form:
-
-  ```
-  mysql://printq:password@host:3306/printq
-  ```
-
-  The MySQL database Hostinger gives you is the database for this app now — you do not bring one from
-  elsewhere. phpMyAdmin is how you look at it; the app is how you write to it.
+  password).
 - Your **Hostinger domain** pointing at the hosted site, so the Node app serves on the real
   hostname.
-- The two secrets:
+- The four MySQL connection variables. The Hostinger dashboard names the database
+  `{account}_{name}`, not plain `printq`, and Hostinger will not let you rename it. The app no longer
+  requires you to build a `DATABASE_URL` by hand for this path: it reads the four parts and assembles
+  `mysql://DB_USER:DB_PASSWORD@DB_HOST:3306/DB_NAME` itself, before PrismaClient is constructed. The
+  compose/docker path still uses `DATABASE_URL` directly — those variables are only for the Hostinger
+  Business MySQL path.
 
   ```bash
-  BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
-  DB_PASSWORD="$(openssl rand -hex 24)"
+  DB_HOST=                  # the MySQL host Hostinger gave you, e.g. mysqlXX.hostinger.com
+  DB_NAME=                  # the database name as Hostinger named it, e.g. u678003261_printq
+  DB_USER=                  # the MySQL user, e.g. u678003261_printq
+  DB_PASSWORD="$(openssl rand -hex 24)"   # the MySQL user's password
   ```
 
-  `DB_PASSWORD` is the MySQL user's password, the same one in your `DATABASE_URL`. The app reads the
-  one connection string it needs from `DATABASE_URL`; `DB_PASSWORD` is there for the env-var symmetry
-  with the compose path and for your own records.
+  `DB_PASSWORD` is the MySQL user's password. The other three are the Hostinger database details.
+  None of them is a secret the app would ever print; `DB_PASSWORD` is the only one worth keeping out
+  of logs and screenshots, same as anywhere else. The app reads `process.env` at request time, so
+  nothing is inlined.
 
 ## First: create the MySQL database on Hostinger
 
@@ -70,18 +71,25 @@ Hostinger gives you.
 
 1. In the Hostinger dashboard, create a **MySQL database** for this app. Note the host, port (usually
    3306), database name, username and password.
-2. Build the `DATABASE_URL` from those: `mysql://printq:password@host:3306/printq`. The user and
-   database name in that URL are the ones you created in the dashboard.
-3. **Set `DATABASE_URL` as an environment variable** in the Hostinger Node.js app's environment panel —
+2. **Set the four MySQL connection variables** in the Hostinger Node.js app's environment panel —
    the same place you will put `BETTER_AUTH_SECRET` and the rest. Hostinger injects these into the build
    and runtime; the app reads `process.env` at request time, so nothing is inlined.
-4. Leave `DB_PASSWORD` in your own records. It is the MySQL password, the same one in your
-   `DATABASE_URL`.
+   ```
+   DB_HOST=...     # the MySQL host Hostinger gave you
+   DB_NAME=...     # the database name as Hostinger named it, e.g. u678003261_printq
+   DB_USER=...     # the MySQL user, e.g. u678003261_printq
+   DB_PASSWORD=... # the MySQL user's password
+   ```
+3. Do **not** set `DATABASE_URL` on the Hostinger panel for this path. The app assembles it from the
+   four variables above. (The compose/docker path still uses `DATABASE_URL` directly — that variable is
+   only for the container stack, not for Hostinger Business MySQL.)
 
-The app expects a database called `printq`, writable by the `printq` user in the connection string.
-Create them with those names in the Hostinger dashboard and the app's first migration (the one that
-creates the tables) will find what it expects. phpMyAdmin is how you confirm the database exists and
-look at what the app wrote; the app is how you write to it.
+The app expects a database writable by the user in `DB_USER`, on the host in `DB_HOST`, named exactly
+as `DB_NAME` says. Hostinger will have named it `{account}_{name}`, which is why the app no longer
+assumes the name is `printq`. Create the database with the name Hostinger gives you, set `DB_NAME` to
+that name, and the app's first migration (the one that creates the tables) will find what it expects.
+phpMyAdmin is how you confirm the database exists and look at what the app wrote; the app is how you
+write to it.
 
 ## Deploying the app to Hostinger Business
 
@@ -100,7 +108,10 @@ GitHub repository with automatic builds:
    NODE_ENV=production
    NPM_CONFIG_INCLUDE=dev                                      # npm, not the app: install devDependencies too
    BETTER_AUTH_SECRET=<the 32-byte secret>
-   DATABASE_URL=mysql://printq:password@host:3306/printq        # MySQL — the Hostinger database
+   DB_HOST=mysqlXX.hostinger.com                                # the MySQL host Hostinger gave you
+   DB_NAME=u678003261_printq                                   # the database name as Hostinger named it
+   DB_USER=u678003261_printq                                  # the MySQL user
+   DB_PASSWORD=<the MySQL user's password>
    BETTER_AUTH_URL=https://print.example.org                   # your real hostname
    PASSKEY_RP_ID=print.example.org                             # permanent; see below
    MODELS_ROOT=/home/.../domains/.../public_html/uploads        # or wherever Hostinger serves uploads
@@ -108,11 +119,14 @@ GitHub repository with automatic builds:
    TRUST_PROXY_HEADERS=<false|true|cloudflare>                 # see the table below
    ```
 
-   `DATABASE_URL` is the MySQL connection string for the database you created in the Hostinger
-   dashboard. The schema is already pinned to the `mysql` provider, the client is already regenerated,
-   and the Better Auth adapter is already told `provider: "mysql"` — that conversion is done in this
-   repo (`prisma/schema.prisma`, `prisma/migrations/migration_lock.toml`, `src/lib/auth.ts`). You do
-   not convert anything; you just point `DATABASE_URL` at the Hostinger MySQL database.
+   Do **not** set `DATABASE_URL` on the Hostinger panel for this path. The app reads `DB_HOST`,
+   `DB_NAME`, `DB_USER` and `DB_PASSWORD` and assembles the MySQL connection URL itself, before
+   PrismaClient is constructed. The compose/docker path still uses `DATABASE_URL` directly — that
+   variable is only for the container stack. The schema is already pinned to the `mysql` provider, the
+   client is already regenerated from it, and the Better Auth adapter is already told
+   `provider: "mysql"` — that conversion is done in this repo (`prisma/schema.prisma`,
+   `prisma/migrations/migration_lock.toml`, `src/lib/auth.ts`). You do not convert anything; you just
+   give the app the Hostinger database details it assembles the URL from.
 
    `MODELS_ROOT` points at a real writable directory inside your Hostinger domain tree. Use the
    path Hostinger's File Manager shows for the domain's `public_html` or a sibling `uploads` folder
@@ -191,10 +205,17 @@ app and nothing else, so the schema is a one-time step you run yourself, from a 
 repository, against the Hostinger database:
 
 ```bash
-export DATABASE_URL='mysql://printq:password@host:3306/printq'
+export DB_HOST=mysqlXX.hostinger.com
+export DB_NAME=u678003261_printq
+export DB_USER=u678003261_printq
+export DB_PASSWORD=<the MySQL user's password>
 npx prisma migrate deploy
 npx tsx prisma/seed.ts
 ```
+
+You can also assemble `DATABASE_URL` yourself and export that instead — the app will use whichever is
+set. Use the four variables when you want the path that does not care what Hostinger named the
+database.
 
 Those are the same two commands the migrator's `CMD` runs, in the same order. `migrate deploy`
 applies the migrations in `prisma/migrations/` and records them in `_prisma_migrations`, so a second
@@ -211,7 +232,7 @@ current database* — and `/setup` is not excepted.
 
 ## After deploy: claim the printer
 
-Once the app is live and `DATABASE_URL` points at the Hostinger MySQL database:
+Once the app is live and the four MySQL connection variables point at the Hostinger MySQL database:
 
 1. Open **`https://your-host.example/setup`** once in a browser.
 2. Claim the printer — shop name, email, username, password. No admin variable, no bootstrap link.
@@ -257,11 +278,10 @@ the database. Keep both somewhere off Hostinger.
 ## What to watch
 
 - **Is the app running?** Dashboard → Node.js app → status, or the Restart button if it has stopped.
-- **Did the build fail?** Dashboard → deployment log. A missing env variable or a wrong `DATABASE_URL`
-  is the common first-deploy failure.
+- **Did the build fail?** Dashboard → deployment log. A missing env variable or a wrong `DATABASE_URL` (or the four MySQL variables) is the common first-deploy failure.
 - **Is MySQL reachable?** If the app starts but nothing loads, the problem is usually the Hostinger
-  MySQL database — wrong host, wrong password, wrong database name in `DATABASE_URL`, or the app
-  cannot reach the database host from where Hostinger runs it.
+  MySQL database — wrong host, wrong password, wrong database name in `DB_NAME`/`DB_HOST`/`DB_USER`/`DB_PASSWORD`,
+  or the app cannot reach the database host from where Hostinger runs it.
 - **Healthcheck.** The app exposes `/api/health`. Hit it from a browser or a monitor; the managed Node
   runtime exposes it the same way the standalone server does.
 
