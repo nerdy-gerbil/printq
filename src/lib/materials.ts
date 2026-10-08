@@ -46,8 +46,8 @@ function assertAdmin(actor: Actor) {
 }
 
 function refresh() {
-  revalidatePath("/admin/materials");
-  revalidatePath("/admin/rates");
+  revalidatePath("/admin/settings/materials");
+  revalidatePath("/admin/settings/rates");
   revalidatePath("/upload");
 }
 

@@ -4,16 +4,19 @@ import { db } from "@/lib/db";
 import { currentUser, notifyTeam, storyRef } from "@/lib/authz";
 import type { Actor } from "@/lib/scope";
 import { record } from "@/lib/audit";
-import { WishSchema, hexForColor } from "@/lib/catalog";
+import { WishSchema } from "@/lib/catalog";
+import { activeColorsFor } from "@/lib/colors";
 import { activeBenefitLabels } from "@/lib/benefits";
 import { activeMaterialNames } from "@/lib/materials";
 import {
   MAX_BYTES,
   REJECTION_COPY,
   extensionOf,
+  formatBytes,
   inspectModel,
   safeFilename,
 } from "@/lib/models";
+import { getSettings } from "@/lib/settings";
 import {
   MAX_CONCURRENT_UPLOADS,
   MAX_QUEUED_UPLOADS,
@@ -43,6 +46,13 @@ let storageReady: Promise<void> | null = null;
 
 const bad = (status: number, error: string) =>
   NextResponse.json({ error }, { status });
+
+/**
+ * "That file is over 250.0 MB." — with the number the *owner* set, not the
+ * compiled ceiling. Telling somebody their file is too big by a limit that is
+ * not the one refusing it sends them looking for a smaller file for no reason.
+ */
+const tooLarge = (maxBytes: number) => `That file is over ${formatBytes(maxBytes)}.`;
 
 /**
  * Only so many uploads are handled at once.
@@ -89,13 +99,31 @@ export async function POST(request: Request) {
   const user = await currentUser();
   if (!user) return bad(401, "Sign in first.");
 
+  const settings = await getSettings();
+  if (settings.ordersPaused) {
+    // 503 rather than 403: nothing about this account is the problem, and the
+    // form shows the owner's own words back to whoever tried.
+    return bad(
+      503,
+      settings.pausedMessage.trim() ||
+        "The printer is not taking new requests just now. Ask the team.",
+    );
+  }
+
+  // The owner's cap can only lower the compiled one. next.config.ts fixes the
+  // transport limit at build time, so a larger number here would be a promise
+  // this server cannot keep — the body would be cut off mid-upload and the
+  // file would look corrupt instead of oversized.
+  const maxBytes = Math.min(settings.maxUploadMb * 1024 * 1024, MAX_BYTES);
+  const maxRequestBytes = Math.min(Math.ceil(maxBytes * 1.2), MAX_REQUEST_BYTES);
+
   // Cheap rejection before reading a single byte of the body. The allowance
   // over the file cap is multipart's own overhead, and it matches the
   // transport limit in next.config.ts so that a file just over the cap is
   // answered "too large" rather than truncated into a parse failure.
   const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > MAX_REQUEST_BYTES) {
-    return bad(413, REJECTION_COPY.too_large);
+  if (declared > maxRequestBytes) {
+    return bad(413, tooLarge(maxBytes));
   }
 
   // Taken *before* the body is read, because reading it is the expensive part.
@@ -106,13 +134,13 @@ export async function POST(request: Request) {
     );
   }
   try {
-    return await handleUpload(request, user);
+    return await handleUpload(request, user, maxBytes);
   } finally {
     releaseSlot();
   }
 }
 
-async function handleUpload(request: Request, user: Actor) {
+async function handleUpload(request: Request, user: Actor, maxBytes: number) {
   let form: FormData;
   try {
     form = await request.formData();
@@ -122,7 +150,7 @@ async function handleUpload(request: Request, user: Actor) {
 
   const file = form.get("file");
   if (!(file instanceof File)) return bad(400, "No file was attached.");
-  if (file.size > MAX_BYTES) return bad(413, REJECTION_COPY.too_large);
+  if (file.size > maxBytes) return bad(413, tooLarge(maxBytes));
 
   const wish = WishSchema.safeParse({
     title: form.get("title") ?? "",
@@ -155,6 +183,26 @@ async function handleUpload(request: Request, user: Actor) {
   if (!allowedMaterials.includes(wish.data.material)) {
     return bad(400, "That is not a material on offer — pick one from the list.");
   }
+  // The colours on offer belong to the material — a spool of PLA is not stocked
+  // in the shades a bottle of resin is — so the list is read for the material
+  // this request names rather than from one list for the whole app. The read
+  // falls back to the five built-in swatches for a material nobody has
+  // configured yet, so this can only refuse a colour that is genuinely not on
+  // the list rather than refusing everything on a fresh deployment.
+  const palette = await activeColorsFor(wish.data.material);
+  const primary = palette.find((c) => c.name === wish.data.colorName);
+  if (!primary) {
+    return bad(400, `That colour is not on offer in ${wish.data.material} — pick one from the list.`);
+  }
+  const extras: Array<{ name: string; hex: string }> = [];
+  for (const name of wish.data.additionalColorNames) {
+    const swatch = palette.find((c) => c.name === name);
+    if (!swatch) {
+      return bad(400, `“${name}” is not on offer in ${wish.data.material} — pick one from the list.`);
+    }
+    extras.push(swatch);
+  }
+
   // Extra colours must be disjoint from the primary.
   if (wish.data.additionalColorNames.includes(wish.data.colorName)) {
     return bad(400, "The extra colours cannot repeat the primary colour.");
@@ -203,8 +251,12 @@ async function handleUpload(request: Request, user: Actor) {
         quantity: wish.data.quantity,
         material: wish.data.material,
         colorName: wish.data.colorName,
-        colorHex: hexForColor(wish.data.colorName),
+        colorHex: primary.hex,
         additionalColorNames: wish.data.additionalColorNames,
+        // Both shapes on purpose: the names are the wire format the API and the
+        // older rows use, and the swatches are what this ticket was actually
+        // asked for, so a later change to the palette never rewrites it.
+        additionalColors: extras.map(({ name, hex }) => ({ name, hex })),
         sourceUrl: wish.data.sourceUrl === "" ? null : wish.data.sourceUrl,
         tip: wish.data.tip,
         note: wish.data.note,

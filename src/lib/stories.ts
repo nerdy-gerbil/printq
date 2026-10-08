@@ -131,6 +131,10 @@ export const STORY_FIELDS = {
   colorName: true,
   colorHex: true,
   additionalColorNames: true,
+  // The swatches each extra colour was asked for. On this list because the
+  // ticket's stripe renders from it: without it a colour the owner added would
+  // fall back to the pale "asked-for, not stocked" band on the board.
+  additionalColors: true,
   sourceUrl: true,
   tip: true,
   note: true,
@@ -566,7 +570,8 @@ export async function requeueStory(actor: Actor, id: number) {
     where: { AND: [{ id }, storyScope(actor)] },
     select: {
       id: true, title: true, quantity: true, material: true, colorName: true,
-      colorHex: true, additionalColorNames: true, tip: true, note: true,
+      colorHex: true, additionalColorNames: true, additionalColors: true,
+      tip: true, note: true,
       printSettings: true, filename: true, fileSize: true,
       mimeType: true, storageKey: true, dims: true, uploaderId: true,
     },
@@ -596,6 +601,10 @@ export async function requeueStory(actor: Actor, id: number) {
       colorName: src.colorName,
       colorHex: src.colorHex,
       additionalColorNames: Array.isArray(src.additionalColorNames) ? src.additionalColorNames : [],
+      // The swatches come along too, for the same reason the names do: a
+      // re-queued ticket is the same request, and a retired or recoloured spool
+      // in the meantime must not change what this one shows.
+      additionalColors: Array.isArray(src.additionalColors) ? src.additionalColors : [],
       tip: src.tip,
       note: src.note,
       printSettings: src.printSettings,

@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { getSettings } from "@/lib/settings";
 import { isTeam, storyScope, type Actor } from "@/lib/scope";
 import { postWebhook } from "@/lib/webhook";
 
@@ -150,14 +151,19 @@ export async function printTeam(): Promise<Actor[]> {
 }
 
 /**
- * Copy for the people who work the queue — "Send it to the print team",
- * "what's in it for the team?". The handoff wrote it as the owner's first
- * name; with a team rather than one owner, a role name is the honest form.
+ * What the team is called in copy — "Send it to …", "…'s queue". An owner
+ * setting now (Settings → What the team is called), defaulting to the plain
+ * description this used to hardcode, so a shop that never opens the settings
+ * screen reads exactly as it did before.
+ *
+ * It was the handoff's owner's first name; with a team rather than one owner,
+ * a role name is the honest form, and the occupant of the printer can put
+ * their own words in it.
  *
  * Only ever rendered behind a session. Unauthenticated pages stay generic
  * rather than telling a stranger who runs the printer.
  */
-export const printerName = cache(async (): Promise<string> => "the print team");
+export const printerName = cache(async (): Promise<string> => (await getSettings()).teamName);
 
 export async function notify(opts: {
   recipientId: string;

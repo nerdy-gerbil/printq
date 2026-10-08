@@ -55,6 +55,13 @@ export type AuditAction =
   | "material.restored"
   | "material.rate_changed"
   | "machine.rate_changed"
+  // colours (the per-material palette)
+  | "color.created"
+  | "color.updated"
+  | "color.retired"
+  | "color.restored"
+  // settings (the owner-managed runtime configuration)
+  | "setting.changed"
   // wishlist
   | "wishlist.added"
   | "wishlist.removed"

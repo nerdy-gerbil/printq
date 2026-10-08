@@ -1,15 +1,23 @@
 /**
  * The choices a request can be made from. Colours and quantities are fixed
- * exactly as the handoff lists them; materials were a fixed enum and are now
- * owner-managed data (see src/lib/materials.ts) — this module only carries
- * the default and the shape, and the upload route validates against the
- * *active* list.
+ * exactly as the handoff lists them; materials are owner-managed data (see
+ * src/lib/materials.ts) and so are the colours a material comes in (see
+ * src/lib/colors.ts) — this module only carries the defaults and the shape, and
+ * the upload route validates against the *active* lists.
  */
 import { z } from "zod";
 
 export const DEFAULT_MATERIAL = "PETG";
 
-/** Filament swatches. Light ones need the inset ring to stay visible. */
+/**
+ * Filament swatches. Light ones need the inset ring to stay visible.
+ *
+ * No longer the only palette: the colours a material is offered in live in the
+ * database and are managed on the settings screen's Colours tab. This list is
+ * what a fresh deployment seeds from and what a material with nothing
+ * configured falls back to, and it is the one palette the client bundle can
+ * carry — which is exactly why the fallback has to exist.
+ */
 export const COLORS = [
   { name: "Teal", hex: "#12645f" },
   { name: "Slate", hex: "#4a5d78" },
@@ -48,8 +56,6 @@ export const STATUS_CHIP: Record<
   Declined: { bg: "#e2e6ea", fg: "#6b747c" },
 };
 
-const colorNames = COLORS.map((c) => c.name) as unknown as [string, ...string[]];
-
 export const QuantitySchema = z.coerce
   .number()
   .int("Whole prints only.")
@@ -71,7 +77,10 @@ export const WishSchema = z.object({
   // Owner-managed: shape only here, the active list is checked server-side
   // against the Material table (this module is shared with the client bundle).
   material: z.string().trim().min(1, "Pick a material.").max(40, "That material is oddly long."),
-  colorName: z.enum(colorNames),
+  // Owner-managed per material: shape only here, the *material's own* active
+  // list is checked server-side against the MaterialColor table (this module is
+  // shared with the client bundle and cannot read the database).
+  colorName: z.string().trim().min(1, "Pick a colour.").max(40, "That colour name is oddly long."),
   quantity: QuantitySchema,
   // The tip is no longer a compile-time enum — it is an owner-managed list.
   // This module is shared with the client bundle and cannot read the database,
@@ -88,9 +97,10 @@ export const WishSchema = z.object({
     .optional()
     .default(""),
   // Multi-colour: up to three additional colours, deduped and disjoint from
-  // the primary. Names only — the swatch hexes come from COLORS at render.
+  // the primary. Names, like the primary, and checked against the material's
+  // list server-side; the swatches are stored on the story at upload time.
   additionalColorNames: z
-    .array(z.enum(colorNames))
+    .array(z.string().trim().min(1).max(40, "That colour name is oddly long."))
     .max(MAX_ADDITIONAL_COLORS, "Up to three extra colours — four in total.")
     .optional()
     .default([]),
@@ -107,10 +117,6 @@ export const WishSchema = z.object({
 });
 
 export type Wish = z.infer<typeof WishSchema>;
-
-export function hexForColor(name: string): string {
-  return COLORS.find((c) => c.name === name)?.hex ?? DEFAULT_COLOR.hex;
-}
 
 /** "4 prints" / "1 print" */
 export const quantityText = (n: number) => `${n} ${n === 1 ? "print" : "prints"}`;

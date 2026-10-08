@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "@/lib/db";
 import { record } from "@/lib/audit";
+import { getSettings } from "@/lib/settings";
 import type { Actor } from "@/lib/scope";
 
 /**
@@ -30,46 +31,94 @@ export type CostInput = {
 export type Cost = {
   filament: number;
   machine: number;
+  /** Filament + machine: what the print cost the shop. */
   total: number;
+  /** The markup those two attracted, in the shop's currency. 0 when unset. */
+  markup: number;
+  /**
+   * What to charge: the cost plus markup, floored at the minimum charge.
+   * Identical to `total` while both settings are 0, which is the default — a
+   * shop that never opens the settings screen sees exactly what it saw before.
+   */
+  price: number;
+  /** true when the floor is what set the price, so the screen can say so. */
+  minimumApplied: boolean;
   /** The rates used, so the UI can show its working. */
   dollarsPerKg: number;
   dollarsPerHour: number;
 };
 
-/** Rates with fallbacks, so a ticket never renders "null dollars". */
-export async function currentRates(material: string): Promise<{
+/**
+ * Everything a cost derives from: the two rates, plus the shop's markup and
+ * floor. The rates live in the database (owner-managed), the other two are
+ * settings — but a caller that has to fetch both to price one ticket would
+ * forget one, so `currentRates` returns all four.
+ */
+export type RateCard = {
   dollarsPerKg: number;
   dollarsPerHour: number;
-}> {
-  const [rate, machine] = await Promise.all([
+  markupPercent: number;
+  minimumCharge: number;
+};
+
+/** Rates with fallbacks, so a ticket never renders "null dollars". */
+export async function currentRates(material: string): Promise<RateCard> {
+  const [rate, machine, settings] = await Promise.all([
     db.materialRate.findUnique({ where: { material } }),
     db.machineRate.findUnique({ where: { id: "default" } }),
+    getSettings(),
   ]);
   return {
     dollarsPerKg: rate?.dollarsPerKg ?? 0,
     dollarsPerHour: machine?.dollarsPerHour ?? 0,
+    markupPercent: settings.markupPercent,
+    minimumCharge: settings.minimumCharge,
   };
 }
 
 /**
  * The derived cost for a ticket. Null while either measurement is missing —
  * half a cost is a guess wearing half a costume.
+ *
+ * Two numbers come out of it, and the difference between them is the point.
+ * `total` is what the print cost — filament weighed and minutes on the bed,
+ * at today's rates. `price` is what the shop asks for it: the cost plus the
+ * owner's markup, floored at their minimum charge. Most shops that charge at
+ * all charge something above cost, and a screen that only knows the cost
+ * leaves that arithmetic to whoever is telling the customer a number.
+ *
+ * Both come out of the same rates, so they cannot drift apart, and with the
+ * markup and floor left at 0 — the defaults — `price` and `total` are the same
+ * figure to the penny.
+ *
+ * `markupPercent` and `minimumCharge` are optional so a caller with only the
+ * two rates (a test, a pure calculation) is not forced to invent them.
  */
-export function deriveCost(
-  input: CostInput,
-  rates: { dollarsPerKg: number; dollarsPerHour: number },
-): Cost | null {
+export function deriveCost(input: CostInput, rates: RateCard): Cost | null {
   if (input.weightGrams == null || input.printMinutes == null) return null;
   if (input.weightGrams < 0 || input.printMinutes < 0) return null;
 
+  const round = (n: number) => Math.round(n * 100) / 100;
+
   const filament = (input.weightGrams / 1000) * rates.dollarsPerKg;
   const machine = (input.printMinutes / 60) * rates.dollarsPerHour;
-  const total = Math.round((filament + machine) * 100) / 100;
+  const subtotal = filament + machine;
+
+  const markupPercent = rates.markupPercent ?? 0;
+  const minimumCharge = rates.minimumCharge ?? 0;
+
+  const markup = subtotal * (markupPercent / 100);
+  const marked = subtotal + markup;
+  const minimumApplied = minimumCharge > 0 && marked < minimumCharge;
+  const price = minimumApplied ? minimumCharge : marked;
 
   return {
-    filament: Math.round(filament * 100) / 100,
-    machine: Math.round(machine * 100) / 100,
-    total,
+    filament: round(filament),
+    machine: round(machine),
+    total: round(subtotal),
+    markup: round(markup),
+    price: round(price),
+    minimumApplied,
     dollarsPerKg: rates.dollarsPerKg,
     dollarsPerHour: rates.dollarsPerHour,
   };
@@ -81,10 +130,10 @@ export async function costFor(input: CostInput): Promise<Cost | null> {
   return deriveCost(input, rates);
 }
 
-/** "$4.32" — two decimals, no trailing-zero games. */
-export function formatMoney(n: number): string {
-  return `$${n.toFixed(2)}`;
-}
+// Money is formatted in `./money.ts`, which has no `server-only` so the
+// ledger form (a client-side component) can read the same currency the page
+// renders in. It used to live here, and the five places that also wrote a bare
+// `$` are why a shop in euro still had dollar signs on its prices.
 
 // ---------------------------------------------------------------------------
 // The machine rate — one $/hour figure for the shop, owner-managed
@@ -132,8 +181,8 @@ export async function setMachineRate(actor: Actor, rawDollars: unknown): Promise
     detail: { from: before?.dollarsPerHour ?? null, to: parsed.data },
   });
 
-  revalidatePath("/admin/rates");
-  revalidatePath("/admin/materials");
+  revalidatePath("/admin/settings/rates");
+  revalidatePath("/admin/settings/materials");
   revalidatePath("/queue");
 }
 

@@ -5,7 +5,9 @@ import { nextStatus, storyRef } from "@/lib/scope";
 import { printerName, requireManager } from "@/lib/authz";
 import { formatBytes } from "@/lib/models";
 import { quantityText, relativeTime } from "@/lib/catalog";
-import { deriveCost, formatMoney } from "@/lib/cost";
+import { deriveCost } from "@/lib/cost";
+import { formatMoney } from "@/lib/money";
+import { getSettings } from "@/lib/settings";
 import { SourceBadge } from "@/components/source-badge";
 import { AppHeader } from "@/components/app-header";
 import { AdminActions } from "@/components/admin-actions";
@@ -39,18 +41,23 @@ export default async function QueuePage({
     include: { uploader: { select: { name: true, initials: true } } },
   });
 
-  // Two lookups per page, not two per row: the cost chip on a working ticket
-  // derives from the same current rates the ledger records against.
-  const [materialRates, machine] = await Promise.all([
+  // Three lookups per page, not three per row: the cost chip on a working
+  // ticket derives from the same rates and the same markup the ledger records
+  // against.
+  const [materialRates, machine, settings] = await Promise.all([
     db.materialRate.findMany(),
     db.machineRate.findUnique({ where: { id: "default" } }),
+    getSettings(),
   ]);
+  const { currency } = settings;
   const kgByMaterial = new Map(materialRates.map((r) => [r.material, r.dollarsPerKg]));
   const machineDollarsPerHour = machine?.dollarsPerHour ?? 0;
   const costForStory = (s: { material: string; weightGrams: number | null; printMinutes: number | null }) =>
     deriveCost(s, {
       dollarsPerKg: kgByMaterial.get(s.material) ?? 0,
       dollarsPerHour: machineDollarsPerHour,
+      markupPercent: settings.markupPercent,
+      minimumCharge: settings.minimumCharge,
     });
 
   const waiting = stories.filter((s) => s.status === "Requested");
@@ -177,9 +184,16 @@ export default async function QueuePage({
                   return (
                     <span
                       className="w-[86px] flex-none font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink-2"
-                      title={`${formatMoney(cost.filament)} filament + ${formatMoney(cost.machine)} machine`}
+                      title={[
+                        `${formatMoney(cost.filament, currency)} filament`,
+                        `${formatMoney(cost.machine, currency)} machine`,
+                        cost.markup > 0 ? `${formatMoney(cost.markup, currency)} markup` : null,
+                        cost.minimumApplied ? "minimum charge applies" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" + ")}
                     >
-                      {formatMoney(cost.total)}
+                      {formatMoney(cost.price, currency)}
                     </span>
                   );
                 })()}

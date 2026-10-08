@@ -34,11 +34,14 @@ const ADMIN_NAV: Array<{ label: string; href: string }> = [
   // The board, not the triage queue: the team wants to see everything that
   // has been asked for, and triage is one button away on that page.
   { label: "Benefits", href: "/admin/benefits" },
-  { label: "Materials", href: "/admin/materials" },
-  { label: "Rates", href: "/admin/rates" },
+  // Materials and Rates are tabs of the settings screen now, not stops on this
+  // bar: a material, the colours it comes in and its price per kilogram are
+  // one subject, and Settings is where that subject lives. Adding them back
+  // here would put the same fact in two places again.
   { label: "Wishlist", href: "/admin/wishlist" },
   { label: "Guest list", href: "/admin/invites" },
   { label: "Audit", href: "/admin/audit" },
+  { label: "Settings", href: "/admin/settings" },
 ];
 
 const NAV: Record<Actor["role"], Array<{ label: string; href: string }>> = {

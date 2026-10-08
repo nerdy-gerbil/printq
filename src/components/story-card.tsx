@@ -3,7 +3,7 @@ import type { Story, User } from "@prisma/client";
 
 import { relativeTime } from "@/lib/catalog";
 import { storyRef } from "@/lib/scope";
-import { ColourStripe } from "@/components/colour-stripe";
+import { ColourStripe, storedSwatches } from "@/components/colour-stripe";
 
 export type CardStory = Story & { uploader: Pick<User, "name" | "initials"> };
 
@@ -36,7 +36,14 @@ export function StoryCard({
       className="ticket group block rounded-card border-[3px] border-ink bg-porcelain shadow-stamp transition-transform hover:-translate-y-[2px] hover:shadow-stamp-lg"
     >
       {/* The filament colour, worn as a stripe — every spool a multi-colour
-          print asks for, as bands. */}          <ColourStripe colorHex={story.colorHex} additionalColorNames={(Array.isArray(story.additionalColorNames) ? story.additionalColorNames : []) as string[] | null} />
+          print asks for, as bands. */}
+      <ColourStripe
+        colorHex={story.colorHex}
+        additionalColorNames={
+          (Array.isArray(story.additionalColorNames) ? story.additionalColorNames : []) as string[] | null
+        }
+        additionalColors={storedSwatches(story.additionalColors)}
+      />
 
       <div className={compact ? "px-[13.2px] py-[11px]" : "px-[15px] py-[13.2px]"}>
         {/* Check number, and a stamp if the kitchen flagged it. */}

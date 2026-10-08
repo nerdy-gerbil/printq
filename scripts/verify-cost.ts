@@ -191,10 +191,10 @@ async function main() {
   // ------------------------------------------------------------------
   section("the rates are owner-managed, set through the screens");
 
-  const materialsPage = await (await ruben.go(`${APP}/admin/materials`)).text();
+  const materialsPage = await (await ruben.go(`${APP}/admin/settings/materials`)).text();
   const petgRateIdx = formIndexContaining(materialsPage, 'name="dollarsPerKg"');
   check("PETG is on the list with a price control", petgRateIdx >= 0);
-  const priced = await ruben.submit(`${APP}/admin/materials`, materialsPage, petgRateIdx, {
+  const priced = await ruben.submit(`${APP}/admin/settings/materials`, materialsPage, petgRateIdx, {
     dollarsPerKg: "30",
   });
   check("the $/kg is saved through the form",
@@ -209,10 +209,10 @@ async function main() {
         kgAudit?.actorId === admin.id && kgDetail?.from === null && kgDetail?.to === 30,
         JSON.stringify(kgAudit?.detail));
 
-  const ratesPage = await (await ruben.go(`${APP}/admin/rates`)).text();
+  const ratesPage = await (await ruben.go(`${APP}/admin/settings/rates`)).text();
   const machineIdx = formIndexContaining(ratesPage, 'id="machine-rate"');
   check("the machine rate has its form", machineIdx >= 0);
-  const hourly = await ruben.submit(`${APP}/admin/rates`, ratesPage, machineIdx, {
+  const hourly = await ruben.submit(`${APP}/admin/settings/rates`, ratesPage, machineIdx, {
     dollarsPerHour: "1.50",
   });
   check("the $/hour is saved through the form",
@@ -226,7 +226,7 @@ async function main() {
   check("and audited from nothing",
         hourAudit?.actorId === admin.id && hourDetail?.from === null && hourDetail?.to === 1.5,
         JSON.stringify(hourAudit?.detail));
-  const ratesAfter = rendered(await (await ruben.go(`${APP}/admin/rates`)).text());
+  const ratesAfter = rendered(await (await ruben.go(`${APP}/admin/settings/rates`)).text());
   check("the rates screen reads the material price back",
         ratesAfter.includes("$30.00 / kg"), ratesAfter.slice(0, 400));
 
@@ -312,15 +312,15 @@ async function main() {
   // Nothing is snapshotted: both inputs are live. PETG goes $30 -> $60
   // and the machine $1.50 -> $3.00, so the same weigh-in now reads
   // $7.20 of filament + $4.50 of machine time = $11.70.
-  const materialsAgain = await (await ruben.go(`${APP}/admin/materials`)).text();
-  const repriced = await ruben.submit(`${APP}/admin/materials`, materialsAgain,
+  const materialsAgain = await (await ruben.go(`${APP}/admin/settings/materials`)).text();
+  const repriced = await ruben.submit(`${APP}/admin/settings/materials`, materialsAgain,
     formIndexContaining(materialsAgain, 'name="dollarsPerKg"'), { dollarsPerKg: "60" });
   check("the material price moves through the form",
         paramOf(repriced.headers.get("location"), "toast").includes("Rate saved for"),
         paramOf(repriced.headers.get("location"), "toast"));
 
-  const ratesAgain = await (await ruben.go(`${APP}/admin/rates`)).text();
-  const rehour = await ruben.submit(`${APP}/admin/rates`, ratesAgain,
+  const ratesAgain = await (await ruben.go(`${APP}/admin/settings/rates`)).text();
+  const rehour = await ruben.submit(`${APP}/admin/settings/rates`, ratesAgain,
     formIndexContaining(ratesAgain, 'id="machine-rate"'), { dollarsPerHour: "3.00" });
   check("and so does the machine rate",
         paramOf(rehour.headers.get("location"), "toast").includes("Machine rate saved"),

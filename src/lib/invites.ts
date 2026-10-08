@@ -1,9 +1,16 @@
 import { Prisma, type Invite, type Role } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getSettings } from "@/lib/settings";
 import { generateToken, hashToken } from "@/lib/tokens";
 import { inviteEmail, mailConfigured, sendMail } from "@/lib/email";
 
-export const INVITE_TTL_DAYS = 7;
+/**
+ * How long an invitation stays good is an owner setting now (Settings →
+ * Invitations expire after), defaulting to the week this used to hardcode. It
+ * was a constant here *and* a sentence on the guest list; two places that could
+ * disagree about the lifetime of the same link.
+ */
+const DAY_MS = 86_400_000;
 
 /** Emails are compared case-insensitively everywhere; store them folded. */
 export function normalizeEmail(email: string): string {
@@ -108,6 +115,7 @@ export async function createInvite(opts: {
     );
   }
 
+  const { inviteExpiryDays } = await getSettings();
   const token = generateToken();
   const invite = await db.invite.create({
     data: {
@@ -116,7 +124,7 @@ export async function createInvite(opts: {
       name: opts.name?.trim() || null,
       role: opts.role ?? "user",
       invitedById: opts.invitedById,
-      expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000),
+      expiresAt: new Date(Date.now() + inviteExpiryDays * DAY_MS),
     },
     include: { invitedBy: { select: { name: true } } },
   });
@@ -127,7 +135,7 @@ export async function createInvite(opts: {
       to: email,
       url,
       inviterName: invite.invitedBy.name,
-      expiresInDays: INVITE_TTL_DAYS,
+      expiresInDays: inviteExpiryDays,
     }),
   );
 
@@ -147,12 +155,13 @@ export async function resendInvite(inviteId: string): Promise<CreatedInvite> {
     throw new InviteError("That invite is no longer open.", "not_found");
   }
 
+  const { inviteExpiryDays } = await getSettings();
   const token = generateToken();
   const invite = await db.invite.update({
     where: { id: inviteId },
     data: {
       tokenHash: hashToken(token),
-      expiresAt: new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000),
+      expiresAt: new Date(Date.now() + inviteExpiryDays * DAY_MS),
       sentAt: new Date(),
     },
   });
@@ -163,7 +172,7 @@ export async function resendInvite(inviteId: string): Promise<CreatedInvite> {
       to: invite.email,
       url,
       inviterName: existing.invitedBy.name,
-      expiresInDays: INVITE_TTL_DAYS,
+      expiresInDays: inviteExpiryDays,
     }),
   );
 

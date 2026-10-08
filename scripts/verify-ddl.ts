@@ -117,6 +117,52 @@ const CASES: Case[] = [
     },
   },
   {
+    // The settings store is the one table whose key is its own primary key. A
+    // key-value table with no key happily holds the same setting twice, which
+    // no page would notice until two of them disagreed.
+    name: "CREATE TABLE for the settings store carries a primary key on key",
+    check: () => {
+      const sql = createTableSql("setting", [
+        { name: "key", type: "VARCHAR(191)", required: true, primaryKey: true },
+        { name: "value", type: "TEXT", required: true },
+        { name: "updatedAt", type: "DATETIME", required: false, default: "CURRENT_TIMESTAMP" },
+      ]);
+      const want = [
+        "CREATE TABLE `setting` (",
+        "  `key` VARCHAR(191) NOT NULL PRIMARY KEY,",
+        "  `value` TEXT NOT NULL,",
+        "  `updatedAt` DATETIME DEFAULT CURRENT_TIMESTAMP",
+        ");",
+      ].join("\n");
+      return sql === want ? null : `got: ${sql}`;
+    },
+  },
+  {
+    // A control for the new type. VARCHAR(191) carries regex metacharacters;
+    // unescaped, its parentheses become a capture group and this glued form
+    // slips past the guard entirely.
+    name: "control: the guard catches a glued VARCHAR(191)NOT NULL",
+    check: () => {
+      try {
+        assertNoGluedKeyword("ALTER TABLE `setting` ADD COLUMN `key` VARCHAR(191)NOT NULL;");
+        return "the guard accepted VARCHAR(191)NOT NULL";
+      } catch {
+        return null;
+      }
+    },
+  },
+  {
+    name: "control: a correctly spaced VARCHAR(191) NOT NULL still passes",
+    check: () => {
+      try {
+        assertNoGluedKeyword("ALTER TABLE `setting` ADD COLUMN `key` VARCHAR(191) NOT NULL;");
+        return null;
+      } catch (error) {
+        return `guard rejected a correct statement: ${(error as Error).message}`;
+      }
+    },
+  },
+  {
     name: "composite unique index quotes every column, in order",
     check: () => {
       const sql = createIndexSql(
@@ -142,26 +188,29 @@ const CASES: Case[] = [
     // The sweep: every type the script emits, against every combination of
     // nullability and default, compared to an expectation built here rather
     // than read back out of the builder.
-    name: `every type x nullability x default is well formed (${MYSQL_TYPES.length} types)`,
+    name: `every type x nullability x default x primary key is well formed (${MYSQL_TYPES.length} types)`,
     check: () => {
       const failures: string[] = [];
       const seen = new Set<string>();
       for (const type of MYSQL_TYPES) {
         for (const required of [true, false]) {
-          for (const def of [null, "'x'", "CURRENT_TIMESTAMP", "false", "0"] as const) {
-            const column = { name: "c", type, required, default: def };
-            const got = columnDefinition(column);
-            const want = [
-              "`c`",
-              type,
-              required ? "NOT NULL" : null,
-              def === null ? null : `DEFAULT ${def}`,
-            ]
-              .filter((part): part is string => part !== null)
-              .join(" ");
-            if (got !== want) failures.push(`${type}/${required}/${def}: got "${got}"`);
-            if (/\s\s/.test(got)) failures.push(`${type}/${required}/${def}: double space in "${got}"`);
-            seen.add(type);
+          for (const primaryKey of [false, true]) {
+            for (const def of [null, "'x'", "CURRENT_TIMESTAMP", "false", "0"] as const) {
+              const column = { name: "c", type, required, default: def, primaryKey };
+              const got = columnDefinition(column);
+              const want = [
+                "`c`",
+                type,
+                required ? "NOT NULL" : null,
+                def === null ? null : `DEFAULT ${def}`,
+                primaryKey ? "PRIMARY KEY" : null,
+              ]
+                .filter((part): part is string => part !== null)
+                .join(" ");
+              if (got !== want) failures.push(`${type}/${required}/${primaryKey}/${def}: got "${got}"`);
+              if (/\s\s/.test(got)) failures.push(`${type}/${required}/${primaryKey}/${def}: double space in "${got}"`);
+              seen.add(type);
+            }
           }
         }
       }
@@ -346,6 +395,96 @@ const CASES: Case[] = [
       if (!/from "\.\/lib\/ddl"/.test(source)) return "the script no longer imports ./lib/ddl";
       const raw = code.match(/\$executeRawUnsafe\(`/g) ?? [];
       return raw.length === 0 ? null : `${raw.length} DDL statement(s) still bypass the builder`;
+    },
+  },
+  {
+    // The settings table is the only one this script creates with a primary
+    // key, and losing it is silent — duplicate rows rather than an error — so
+    // the pin is against the reconciliation's own source.
+    name: "the reconciliation creates the settings table keyed by key",
+    check: () => {
+      const source = readFileSync(new URL("./reconcile-hostinger-db.ts", import.meta.url), "utf8");
+      if (!source.includes('ensureTable("setting", "setting"')) {
+        return "the setting table is no longer created by the reconciliation";
+      }
+      if (!source.includes('name: "key", type: "VARCHAR(191)", required: true, primaryKey: true')) {
+        return "the setting table is created without a primary key on key";
+      }
+      return null;
+    },
+  },
+  {
+    // The per-material colour palette. Its key is the pair, not the name: the
+    // same colour may exist on two materials with two different hexes. Both
+    // indexed columns are VARCHAR(191) for the same reason `setting.key` is —
+    // MySQL cannot put a key on TEXT without a prefix.
+    name: "CREATE TABLE for the per-material palette is keyed by material and name",
+    check: () => {
+      const sql = createTableSql("material_color", [
+        { name: "id", type: "VARCHAR(191)", required: true, primaryKey: true },
+        { name: "material", type: "VARCHAR(191)", required: true },
+        { name: "name", type: "VARCHAR(191)", required: true },
+        { name: "hex", type: "TEXT", required: true },
+        { name: "active", type: "BOOLEAN", required: false, default: "true" },
+        { name: "sortOrder", type: "INTEGER", required: false, default: "0" },
+        { name: "createdAt", type: "DATETIME", required: false, default: "CURRENT_TIMESTAMP" },
+        { name: "updatedAt", type: "DATETIME", required: false, default: "CURRENT_TIMESTAMP" },
+      ]);
+      const want = [
+        "CREATE TABLE `material_color` (",
+        "  `id` VARCHAR(191) NOT NULL PRIMARY KEY,",
+        "  `material` VARCHAR(191) NOT NULL,",
+        "  `name` VARCHAR(191) NOT NULL,",
+        "  `hex` TEXT NOT NULL,",
+        "  `active` BOOLEAN DEFAULT true,",
+        "  `sortOrder` INTEGER DEFAULT 0,",
+        "  `createdAt` DATETIME DEFAULT CURRENT_TIMESTAMP,",
+        "  `updatedAt` DATETIME DEFAULT CURRENT_TIMESTAMP",
+        ");",
+      ].join("\n");
+      return sql === want ? null : `got:\n${sql}`;
+    },
+  },
+  {
+    // A ticket keeps the swatch each extra colour was asked for, beside the
+    // name-only array that predates the owner-managed palette. Nullable: every
+    // row written before this column existed has no answer, and inventing one
+    // would be worse than the render-time fallback (src/lib/colors.ts).
+    name: "story.additionalColors is added as a nullable JSON column",
+    check: () => {
+      const sql = addColumnSql("story", {
+        name: "additionalColors",
+        type: "JSON",
+        required: false,
+      });
+      const want = "ALTER TABLE `story` ADD COLUMN `additionalColors` JSON;";
+      return sql === want ? null : `got: ${sql}`;
+    },
+  },
+  {
+    // Both halves of the palette are silent when lost: an uncreated table
+    // fails the first upload, and an unseeded one leaves the upload form with
+    // no colours to offer on a fresh deployment. Pinned against the
+    // reconciliation's own source, like the settings table above.
+    name: "the reconciliation creates, indexes and seeds the per-material palette",
+    check: () => {
+      const source = readFileSync(
+        new URL("./reconcile-hostinger-db.ts", import.meta.url),
+        "utf8",
+      );
+      if (!source.includes('ensureTable("materialColor", "material_color"')) {
+        return "the material_color table is no longer created by the reconciliation";
+      }
+      if (!source.includes('{ name: "material", type: "VARCHAR(191)", required: true }')) {
+        return "material_color is created without the VARCHAR(191) material column its index needs";
+      }
+      if (!/ensureIndex\(\s*"material_color",\s*\["material", "name"\],\s*true,/.test(source)) {
+        return "the palette's unique index on (material, name) is gone";
+      }
+      if (!source.includes("client.materialColor.createMany(")) {
+        return "the palette is never seeded, so a fresh deployment would offer no colours";
+      }
+      return null;
     },
   },
 ];

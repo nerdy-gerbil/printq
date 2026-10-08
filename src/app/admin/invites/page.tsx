@@ -3,7 +3,7 @@ import type { Invite } from "@prisma/client";
 
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
-import { INVITE_TTL_DAYS } from "@/lib/invites";
+import { getSettings } from "@/lib/settings";
 import { RESET_TTL_MINUTES } from "@/lib/password-reset";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, StatusChip } from "@/components/ui";
@@ -53,6 +53,7 @@ function relative(date: Date): string {
 
 export default async function InvitesPage() {
   const admin = await requireAdmin();
+  const settings = await getSettings();
 
   const [invites, memberList] = await Promise.all([
     db.invite.findMany({
@@ -82,7 +83,7 @@ export default async function InvitesPage() {
         <p className="m-0 mb-[26.4px] max-w-[620px] text-[16.5px] leading-[1.5] text-ink-2 text-pretty">
           {members} {members === 1 ? "person" : "people"} can send you models, and{" "}
           {open.length} {open.length === 1 ? "invite is" : "invites are"} still
-          outstanding. Links expire after {INVITE_TTL_DAYS} days and work exactly
+          outstanding.          Links expire after {settings.inviteExpiryDays} days and work exactly
           once.
         </p>
 

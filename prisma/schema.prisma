@@ -283,6 +283,16 @@ model Story {
   /// generated client is used from this schema.
   additionalColorNames Json @default("[]")
 
+  /// The same extra colours, each one as `{ name, hex }`, written at upload
+  /// time. Names alone were enough while the palette was five compile-time
+  /// swatches that any render could look up; now that a colour belongs to a
+  /// material and an owner can recolour one, the ticket has to keep the swatch
+  /// it was actually asked for — the same reason colorHex is stored beside
+  /// colorName rather than looked up from a list at render time.
+  /// `additionalColorNames` stays as it is: it is the wire format the API and
+  /// the older rows both use.
+  additionalColors Json?
+
   /// Where the model came from, if not made by the requester — a Makeronline,
   /// Printables, MakerWorld or Thingiverse URL, say. No fetching happens
   /// against it at upload time; this is a reference link on the ticket so the
@@ -380,6 +390,36 @@ model Material {
 
   @@index([active, sortOrder])
   @@map("material")
+}
+
+/// The colours a material is offered in — owner-managed, like the material
+/// list itself.
+///
+/// A colour belongs to a material rather than to the app: a spool of PLA is
+/// not stocked in the colours a bottle of resin is, and an owner who keeps
+/// four shades of PETG should not have to offer them for everything else. The
+/// name is what a story records, so retiring or recolouring an entry never
+/// rewrites a past ticket — it only changes what the upload form offers.
+///
+/// Keyed by (material, name) because the pair is the fact: "Teal" on PETG and
+/// "Teal" on resin may be two different spools with two different hexes.
+/// `material` is a plain string, not a foreign key to Material.name, for the
+/// same reason MaterialRate.material is: a row for a since-renamed material
+/// keeps working instead of cascade-deleting.
+model MaterialColor {
+  id        String   @id @default(cuid())
+  material  String
+  name      String
+  /// #rrggbb. Validated on the way in and at upload time (src/lib/colors.ts).
+  hex       String
+  active    Boolean  @default(true)
+  /// Display order on the upload form, lowest first.
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([material, name])
+  @@map("material_color")
 }
 
 /// Owner-managed $/kg by material — an input of the cost calculator
@@ -521,4 +561,27 @@ model Benefit {
 
   @@index([active, sortOrder])
   @@map("benefit")
+}
+
+// ===========================================================================
+// Settings — owner-managed runtime configuration
+//
+// One row per key, the value always a JSON-encoded scalar, edited on
+// /admin/settings. Deliberately not one wide row: a setting arrives or leaves
+// without a migration, and the table reads as a list a person can diff.
+//
+// The registry is `src/lib/settings.ts` — it owns the defaults, the validation
+// and the typed shape the rest of the app sees — so a row that is missing,
+// stale or hand-edited in the database falls back to the default rather than
+// breaking a page. Nothing writes here except that module.
+// ===========================================================================
+
+model Setting {
+  /// Stable key, e.g. "currency" or "markupPercent". See src/lib/settings.ts.
+  key       String   @id
+  /// JSON-encoded, so `true`, `7` and `"EUR"` all round-trip unchanged.
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("setting")
 }

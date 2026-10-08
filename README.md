@@ -72,12 +72,19 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   to define at `/admin/benefits`, and the ones marked *preferred* are starred
   on the upload form.
 - **Owner-managed materials** — the catalogue of what a request can be made
-  from lives at `/admin/materials`, not in a compile-time list: add, rename,
-  retire, restore. Retiring never rewrites a past ticket.
+  from lives on the Materials tab of `/admin/settings`, not in a compile-time
+  list: add, rename, retire, restore. Retiring never rewrites a past ticket.
+- **Owner-managed colours, per material** — the Colours tab of
+  `/admin/settings` is where each material's swatches are defined, name and hex:
+  a spool of PLA is not stocked in the shades a bottle of resin is. The upload
+  form offers the chosen material's own list and swaps it the moment the
+  material changes, and a ticket keeps the swatch it was asked for, so
+  recolouring a spool never rewrites history.
 - **A cost ledger, derived not stored** — the team records what a finished
   print *weighed* (grams) and *ran* (minutes) on the ticket; the app derives
   the cost at render from the current rates: $/kg per material, one $/hour for
-  the machine, set at `/admin/materials` and `/admin/rates`. Nothing is
+  the machine, set on the Materials and Rates tabs of `/admin/settings`.
+  Nothing is
   snapshotted, nothing is inferred, and nothing is shown to the requester —
   what a print costs the team is the team's ledger.
 - **A wishlist** — the intake queue for "ooh, print this": paste a product

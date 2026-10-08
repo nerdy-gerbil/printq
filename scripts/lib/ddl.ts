@@ -28,6 +28,12 @@ export type ColumnSpec = {
    * `CURRENT_TIMESTAMP`), or null/undefined for no DEFAULT clause at all.
    */
   default?: string | null;
+  /**
+   * true → PRIMARY KEY. Only `setting` needs it, and only because a key-value
+   * table without a key is a table that can hold the same setting twice.
+   * Emitted last, after any DEFAULT, which is the order MySQL's grammar lists.
+   */
+  primaryKey?: boolean;
 };
 
 /** The types this script emits. Kept in one list so the guard can see them. */
@@ -39,6 +45,12 @@ export const MYSQL_TYPES = [
   "BOOLEAN",
   "DATETIME",
   "JSON",
+  /**
+   * A bounded character column — for a PRIMARY KEY, which MySQL cannot put on
+   * TEXT without a key prefix. Prisma's own default for a `String` is 191
+   * characters, so a table built here and one built by `prisma db push` agree.
+   */
+  "VARCHAR(191)",
 ] as const;
 
 /**
@@ -47,7 +59,11 @@ export const MYSQL_TYPES = [
  * the type, so it does not match; `TEXTNOT NULL` does.
  */
 const GLUED_TYPE_KEYWORD = new RegExp(
-  `(?:${MYSQL_TYPES.join("|")})(?=NOT\\b|NULL\\b|DEFAULT\\b|PRIMARY\\b|UNIQUE\\b)`,
+  // `VARCHAR(191)` is the one type carrying regex metacharacters, so every
+  // type is escaped: unescaped, its parentheses would become a capture group
+  // and the guard would stop seeing `VARCHAR(191)NOT NULL` as glued.
+  `(?:${MYSQL_TYPES.map((type) => type.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})` +
+    `(?=NOT\\b|NULL\\b|DEFAULT\\b|PRIMARY\\b|UNIQUE\\b)`,
 );
 
 /** A template that glues two interpolations together, e.g. `${type}${nullable}`. */
@@ -82,6 +98,7 @@ export function columnDefinition(column: ColumnSpec): string {
   if (column.default !== null && column.default !== undefined) {
     clauses.push(`DEFAULT ${column.default}`);
   }
+  if (column.primaryKey) clauses.push("PRIMARY KEY");
   return clauses.join(" ");
 }
 

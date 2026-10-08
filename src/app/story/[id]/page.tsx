@@ -3,11 +3,14 @@ import { notFound } from "next/navigation";
 
 import { getStoryOr404, printerName, requireUser, storyRef, FLOW } from "@/lib/authz";
 import { COLORS, quantityText, relativeTime } from "@/lib/catalog";
-import { currentRates, deriveCost, formatMinutes, formatMoney } from "@/lib/cost";
+import { currentRates, deriveCost, formatMinutes } from "@/lib/cost";
+import { formatMoney, formatRate } from "@/lib/money";
+import { getSettings } from "@/lib/settings";
 import { formatBytes } from "@/lib/models";
 import { AppHeader } from "@/components/app-header";
 import { Fact, Notice, StatusChip } from "@/components/ui";
 import { PrintLedger } from "@/components/print-ledger";
+import { storedSwatches } from "@/components/colour-stripe";
 import { SourceBadge } from "@/components/source-badge";
 import { AdminActions } from "@/components/admin-actions";
 import { Conversation } from "@/components/conversation";
@@ -43,6 +46,8 @@ export default async function StoryPage({
   // a 403 would confirm it exists.
   const story = await getStoryOr404(storyId, user);
   const owner = await printerName();
+  const settings = await getSettings();
+  const { currency } = settings;
 
   // The ledger is the team's business, so its numbers are fetched only for
   // the team — a requester's page never even asks the rates table.
@@ -55,6 +60,12 @@ export default async function StoryPage({
       )
     : null;
   const extraColours = (Array.isArray(story.additionalColorNames) ? story.additionalColorNames : []).filter((n) => typeof n === "string" && n.trim() !== "");
+  // The swatch each extra colour was actually asked for, as the ticket recorded
+  // it. Empty for a ticket uploaded before the column existed, which is what the
+  // old look-up in the compile-time palette is still there for.
+  const extraSwatches = new Map(
+    storedSwatches(story.additionalColors).map((c) => [c.name, c.hex]),
+  );
 
   const currentIndex = (FLOW as readonly string[]).indexOf(story.status);
 
@@ -152,7 +163,10 @@ export default async function StoryPage({
                     </span>
                     {extraColours.map((name) => {
                       const nm: string = typeof name === "string" ? name : "";
-                      const hex = COLORS.find((c) => c.name === nm)?.hex ?? "#eaecee";
+                      const hex =
+                        extraSwatches.get(nm) ??
+                        COLORS.find((c) => c.name === nm)?.hex ??
+                        "#eaecee";
                       return (
                         <span key={nm} className="flex items-center gap-[8.8px]">
                           <span
@@ -199,22 +213,38 @@ export default async function StoryPage({
                 {cost ? (
                   <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-[17.6px]">
                     <Fact label="Filament">
-                      {story.weightGrams} g · {formatMoney(cost.filament)}
+                      {story.weightGrams} g · {formatMoney(cost.filament, currency)}
                     </Fact>
                     <Fact label="Machine time">
-                      {formatMinutes(story.printMinutes ?? 0)} · {formatMoney(cost.machine)}
+                      {formatMinutes(story.printMinutes ?? 0)} · {formatMoney(cost.machine, currency)}
                     </Fact>
                     <Fact label="Cost to the team">
                       <span className="font-display text-[22px] font-bold text-ink">
-                        {formatMoney(cost.total)}
+                        {formatMoney(cost.total, currency)}
                       </span>
                     </Fact>
+                    {/* Only when the shop asks for more than it costs. A price
+                        equal to the cost is the same number twice, and the
+                        default settings produce exactly that. */}
+                    {cost.price !== cost.total && (
+                      <Fact label="Price to charge">
+                        <span className="font-display text-[22px] font-bold text-ink">
+                          {formatMoney(cost.price, currency)}
+                        </span>
+                        <span className="mt-[2px] block font-mono text-[11px] uppercase tracking-[0.04em] text-ink-3">
+                          {cost.minimumApplied
+                            ? "minimum charge"
+                            : `${settings.markupPercent}% on cost`}
+                        </span>
+                      </Fact>
+                    )}
                   </div>
                 ) : (
                   <p className="m-0 text-[14px] leading-[1.5] text-ink-2">
                     No measurements recorded yet — weigh the print and note the
-                    minutes, and the cost derives itself at {rates.dollarsPerKg.toFixed(2)} $/kg
-                    + {rates.dollarsPerHour.toFixed(2)} $/hour.
+                    minutes, and the cost derives itself at{" "}
+                    {formatRate(rates.dollarsPerKg, currency, "kg")} +{" "}
+                    {formatRate(rates.dollarsPerHour, currency, "hour")}.
                   </p>
                 )}
                 <PrintLedger
@@ -223,6 +253,7 @@ export default async function StoryPage({
                   printMinutes={story.printMinutes}
                   dollarsPerKg={rates.dollarsPerKg > 0 ? rates.dollarsPerKg : null}
                   dollarsPerHour={rates.dollarsPerHour > 0 ? rates.dollarsPerHour : null}
+                  currency={currency}
                   from={`/story/${story.id}`}
                 />
               </section>

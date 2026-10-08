@@ -13,7 +13,7 @@ import { CostProblem, setMachineRate } from "@/lib/cost";
  */
 
 function back(params: Record<string, string>): never {
-  redirect(`/admin/rates?${new URLSearchParams(params).toString()}`);
+  redirect(`/admin/settings/rates?${new URLSearchParams(params).toString()}`);
 }
 
 export async function setMachineRateAction(formData: FormData): Promise<void> {

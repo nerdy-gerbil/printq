@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { COLORS, TIPS, WishSchema } from "@/lib/catalog";
+import { TIPS, WishSchema } from "@/lib/catalog";
 import { ACCEPTED_EXTENSIONS, MAX_BYTES, formatBytes } from "@/lib/models";
 import { FLOW, storyRef } from "@/lib/scope";
 import { BodySchema, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, ReasonSchema } from "@/lib/stories";
@@ -106,7 +106,15 @@ const STORY_SCHEMA = {
     color: {
       type: "object",
       properties: {
-        name: { type: "string", enum: COLORS.map((c) => c.name) },
+        name: {
+          type: "string",
+          description:
+            "Free text, not an enum: the colours on offer belong to the " +
+            "material and an admin can add, rename or retire one, so an enum " +
+            "here would go stale the moment they did — the same reason " +
+            "`material` is described rather than enumerated.",
+          examples: ["Slate", "Bone white"],
+        },
         hex: { type: "string", examples: ["#4a5d78"] },
       },
     },

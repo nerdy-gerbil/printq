@@ -1,5 +1,6 @@
 import { recordCostAction } from "@/app/actions/stories";
 import { formatMinutes } from "@/lib/cost";
+import { formatRate } from "@/lib/money";
 
 /**
  * The print team's ledger entry, on a ticket.
@@ -20,6 +21,7 @@ export function PrintLedger({
   printMinutes,
   dollarsPerKg,
   dollarsPerHour,
+  currency,
   from,
 }: {
   storyId: number;
@@ -28,6 +30,8 @@ export function PrintLedger({
   /** Current rates, so the form can say what the numbers will be multiplied by. */
   dollarsPerKg: number | null;
   dollarsPerHour: number | null;
+  /** The shop's currency, passed down: this module renders on both sides. */
+  currency: string;
   from: string;
 }) {
   return (
@@ -44,7 +48,7 @@ export function PrintLedger({
         <p className="m-0 mb-[11px] text-[13.5px] leading-[1.45] text-ink-2">
           What the print weighed and how long it ran — measured, not guessed.
           {dollarsPerKg != null && dollarsPerHour != null
-            ? ` Cost is derived at ${dollarsPerKg.toFixed(2)} $/kg and ${dollarsPerHour.toFixed(2)} $/hour, at render, from the current rates.`
+            ? ` Cost is derived at ${formatRate(dollarsPerKg, currency, "kg")} and ${formatRate(dollarsPerHour, currency, "hour")}, at render, from the current rates.`
             : " Set rates under Materials and Rates first."}
         </p>
         <div className="flex flex-wrap items-end gap-[13.2px]">

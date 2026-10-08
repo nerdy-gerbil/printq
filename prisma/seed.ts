@@ -1,6 +1,6 @@
 /**
- * Seeds the owner-managed catalogues — the default benefits, materials and
- * cost rates.
+ * Seeds the owner-managed catalogues — the default benefits, materials, the
+ * colours each material is offered in, and the cost rates.
  *
  * The administrator is NOT seeded. The first admin is created through the
  * first-run /setup page, which whoever deploys the app opens once; there are
@@ -49,6 +49,30 @@ async function main() {
     `Materials ready: ${DEFAULT_MATERIALS.length} default material(s) present.`,
   );
 
+  // The built-in filament swatches, per material. Same idempotent shape as the
+  // two catalogues above, so a re-run fills gaps and leaves the owner's own
+  // colours — renamed, recoloured or retired — exactly as they left them.
+  const DEFAULT_COLORS = [
+    { name: "Teal", hex: "#12645f" },
+    { name: "Slate", hex: "#4a5d78" },
+    { name: "Bone white", hex: "#eaecee" },
+    { name: "Graphite", hex: "#1b2126" },
+    { name: "Whatever's on", hex: "#b6bcc2" },
+  ];
+  for (const material of DEFAULT_MATERIALS) {
+    for (let i = 0; i < DEFAULT_COLORS.length; i++) {
+      const color = DEFAULT_COLORS[i]!;
+      await db.materialColor.upsert({
+        where: { material_name: { material, name: color.name } },
+        update: {},
+        create: { material, name: color.name, hex: color.hex, sortOrder: i + 1 },
+      });
+    }
+  }
+  console.info(
+    `Colours ready: ${DEFAULT_COLORS.length} swatch(es) per material, editable at /admin/settings.`,
+  );
+
   // The default cost-calculator rates. Idempotent per-key upserts, same shape
   // as benefits: a re-run never overwrites a price the owner already changed.
   const DEFAULT_MATERIAL_RATES: Record<string, number> = {
@@ -69,7 +93,7 @@ async function main() {
     update: {},
     create: { id: "default", dollarsPerHour: 0.75 },
   });
-  console.info("Cost calculator rates ready (edit them at /admin/rates).");
+  console.info("Cost calculator rates ready (edit them at /admin/settings).");
 
   console.info("No administrator is seeded — open /setup once to claim the printer.");
 }

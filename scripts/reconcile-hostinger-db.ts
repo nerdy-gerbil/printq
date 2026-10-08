@@ -262,6 +262,8 @@ function defaultValueSqlFor(model: string, field: string): string | null {
   if (model === "notification" && field === "read") return "false";
   if (model === "material" && field === "active") return "true";
   if (model === "material" && field === "sortOrder") return "0";
+  if (model === "materialColor" && field === "active") return "true";
+  if (model === "materialColor" && field === "sortOrder") return "0";
   if (model === "story" && field === "quantity") return "1";
   if (model === "story" && field === "material") return "'PETG'";
   if (model === "story" && field === "note") return "''";
@@ -283,6 +285,8 @@ async function ensureTable(model: string, table: string, fields: Array<{
   name: string;
   type: string;
   required: boolean;
+  /** true → the column carries PRIMARY KEY (see ./lib/ddl). */
+  primaryKey?: boolean;
 }>) {
   const shape = await tableShape(table);
   if (shape !== null) {
@@ -295,6 +299,7 @@ async function ensureTable(model: string, table: string, fields: Array<{
     type: field.type,
     required: field.required,
     default: defaultValueSqlFor(model, field.name),
+    primaryKey: field.primaryKey,
   }));
   await run(createTableSql(table, columns));
   console.log(`table ${table}: created`);
@@ -527,6 +532,22 @@ async function main() {
     { name: "updatedAt", type: "DATETIME", required: false },
   ]);
 
+  // The colours each material is offered in. `id`, `material` and `name` are
+  // VARCHAR(191) rather than TEXT because they carry keys — the primary key and
+  // the unique index below — and MySQL cannot put a key on TEXT without a
+  // prefix. That is also Prisma's own default width for a String, so a table
+  // built here and one built by `prisma db push` agree.
+  await ensureTable("materialColor", "material_color", [
+    { name: "id", type: "VARCHAR(191)", required: true, primaryKey: true },
+    { name: "material", type: "VARCHAR(191)", required: true },
+    { name: "name", type: "VARCHAR(191)", required: true },
+    { name: "hex", type: "TEXT", required: true },
+    { name: "active", type: "BOOLEAN", required: false },
+    { name: "sortOrder", type: "INTEGER", required: false },
+    { name: "createdAt", type: "DATETIME", required: false },
+    { name: "updatedAt", type: "DATETIME", required: false },
+  ]);
+
   await ensureTable("material_rate", "material_rate", [
     { name: "material", type: "TEXT", required: true },
     { name: "dollarsPerKg", type: "DOUBLE PRECISION", required: true },
@@ -571,6 +592,17 @@ async function main() {
     { name: "createdAt", type: "DATETIME", required: false },
   ]);
 
+  // The owner-managed settings behind /admin/settings. One row per key, the
+  // value JSON-encoded — src/lib/settings.ts owns the keys and the defaults,
+  // so nothing here enumerates them and a new setting needs no migration.
+  // `key` is VARCHAR(191) rather than TEXT because it is the primary key, and
+  // MySQL cannot put a key on TEXT without a prefix.
+  await ensureTable("setting", "setting", [
+    { name: "key", type: "VARCHAR(191)", required: true, primaryKey: true },
+    { name: "value", type: "TEXT", required: true },
+    { name: "updatedAt", type: "DATETIME", required: false },
+  ]);
+
   // ---------------------------------------------------------------------------
   // 4. Columns the table exists for but may be missing
   // ---------------------------------------------------------------------------
@@ -583,6 +615,7 @@ async function main() {
   await ensureColumn("story", "weightGrams", "INTEGER", false);
   await ensureColumn("story", "printMinutes", "INTEGER", false);
   await ensureColumn("story", "additionalColorNames", "JSON", false);
+  await ensureColumn("story", "additionalColors", "JSON", false);
   await ensureColumn("story", "sourceUrl", "TEXT", false);
   await ensureColumn("story", "printSettings", "TEXT", false);
   await ensureColumn("story", "dims", "TEXT", false);
@@ -701,6 +734,12 @@ async function main() {
   await ensureIndex("notification", ["recipientId", "read"], false, "notification_recipientId_read_idx");
   await ensureIndex("material", ["name"], true, "material_name_key");
   await ensureIndex("material", ["active", "sortOrder"], false, "material_active_sortOrder_idx");
+  await ensureIndex(
+    "material_color",
+    ["material", "name"],
+    true,
+    "material_color_material_name_key",
+  );
   await ensureIndex("wishlistItem", ["url"], true, "wishlistItem_url_key");
   await ensureIndex("wishlistItem", ["createdAt"], false, "wishlistItem_createdAt_idx");
   await ensureIndex("wishlistItem", ["addedById"], false, "wishlistItem_addedById_idx");
@@ -739,6 +778,49 @@ async function main() {
     console.log("machine_rate seeded with defaults");
   } else {
     console.log("machine_rate already has rows");
+  }
+
+  // The five built-in filament swatches, per active material, so a deployment
+  // that never opens the Colours tab offers exactly what it offered before the
+  // palette became owner-managed. Through the client rather than a hand-built
+  // INSERT because one of the names is "Whatever's on" — an apostrophe, which
+  // would have to be escaped by hand in raw SQL and is simply a value here.
+  // skipDuplicates keeps a re-run from resurrecting a colour the owner has
+  // recoloured, renamed or retired.
+  const colorCount = await client.$queryRaw<Array<{ n: number }>>`
+    SELECT COUNT(*) AS n FROM material_color
+  `;
+  if ((colorCount[0]?.n ?? 0) === 0) {
+    const activeMaterials = await client.material.findMany({
+      where: { active: true },
+      select: { name: true },
+      orderBy: { sortOrder: "asc" },
+    });
+    const swatches = [
+      { name: "Teal", hex: "#12645f" },
+      { name: "Slate", hex: "#4a5d78" },
+      { name: "Bone white", hex: "#eaecee" },
+      { name: "Graphite", hex: "#1b2126" },
+      { name: "Whatever's on", hex: "#b6bcc2" },
+    ];
+    if (activeMaterials.length > 0) {
+      await client.materialColor.createMany({
+        data: activeMaterials.flatMap((material) =>
+          swatches.map((swatch, i) => ({
+            material: material.name,
+            name: swatch.name,
+            hex: swatch.hex,
+            sortOrder: i + 1,
+          })),
+        ),
+        skipDuplicates: true,
+      });
+    }
+    console.log(
+      `material_color seeded with ${swatches.length} swatch(es) for ${activeMaterials.length} material(s)`,
+    );
+  } else {
+    console.log("material_color already has rows");
   }
 
   // ---------------------------------------------------------------------------

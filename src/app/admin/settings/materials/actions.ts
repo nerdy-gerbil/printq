@@ -10,10 +10,13 @@ import { MaterialProblem, createMaterial, renameMaterial, setMaterialActive, set
  * forms. The rules and the audit live in `src/lib/materials.ts`; this reads a
  * `FormData`, calls the operation and redirects with a toast. Every action
  * re-checks the role: rendering the page is not authorisation.
+ *
+ * The redirect comes back to `/admin/settings/materials`, the Materials tab,
+ * because that is the page these forms are rendered on.
  */
 
 function back(params: Record<string, string>): never {
-  redirect(`/admin/materials?${new URLSearchParams(params).toString()}`);
+  redirect(`/admin/settings/materials?${new URLSearchParams(params).toString()}`);
 }
 
 export async function createMaterialAction(formData: FormData): Promise<void> {

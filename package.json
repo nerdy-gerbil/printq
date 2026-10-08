@@ -47,6 +47,7 @@
     "verify:wishlist": "tsx scripts/verify-wishlist.ts",
     "verify:api": "tsx scripts/verify-api.ts",
     "verify:cost": "tsx scripts/verify-cost.ts",
+    "verify:settings": "tsx scripts/verify-settings.ts",
     "verify:dburl": "tsx scripts/verify-db-url.ts",
     "verify:ddl": "tsx scripts/verify-ddl.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts",

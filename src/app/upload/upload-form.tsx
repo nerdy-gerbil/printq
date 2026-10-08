@@ -13,11 +13,7 @@ import {
 // The same numbers the server enforces. `models.ts` cannot be imported here —
 // it would pull `fflate` and the mesh parser into the browser bundle — which
 // is why these three used to be copied into this file by hand.
-import {
-  ACCEPTED_EXTENSIONS,
-  MAX_UPLOAD_BYTES,
-  formatBytes,
-} from "@/lib/upload-limits";
+import { ACCEPTED_EXTENSIONS, formatBytes } from "@/lib/upload-limits";
 
 /** One owner-managed tip option, passed from the server (see upload/page.tsx). */
 type Benefit = { label: string; preferred: boolean };
@@ -77,11 +73,40 @@ export function UploadForm({
   owner,
   benefits,
   materialNames,
+  palettes,
+  defaultMaterial,
+  maxBytes,
 }: {
   owner: string;
   benefits: Benefit[];
   materialNames: string[];
+  /**
+   * Colour options per material, resolved on the server (src/lib/colors.ts).
+   * A colour belongs to a material now — PLA and resin are not stocked in the
+   * same shades — so this is one list per material name, and the form swaps
+   * lists when the requester swaps material.
+   */
+  palettes: Record<string, { name: string; hex: string }[]>;
+  /** Material to start on. Empty, or since retired, falls back to the first. */
+  defaultMaterial: string;
+  /** The owner's size cap in bytes, already resolved against the ceiling. */
+  maxBytes: number;
 }) {
+  // Resolved to a name that is actually on the list: the setting may be empty
+  // or name a material that has since been retired, and a select whose value
+  // is not one of its options posts something the server refuses.
+  const startingMaterial = materialNames.includes(defaultMaterial)
+    ? defaultMaterial
+    : materialNames[0] ?? DEFAULT_MATERIAL;
+  /**
+   * The palette for one material. The five built-in swatches are the fallback
+   * rather than an empty list: a material whose colours nobody has configured
+   * yet keeps offering exactly what this app has always offered, and an empty
+   * colour row would leave a requester with nothing to pick.
+   */
+  const paletteFor = (name: string) =>
+    palettes[name]?.length ? palettes[name] : COLORS.map((c) => ({ name: c.name, hex: c.hex }));
+  const startingPalette = paletteFor(startingMaterial);
   // Default to a preferred benefit if the owner has marked one, else the first
   // on the list, else empty (the list is seeded, so empty is only a safety net).
   const preferredLabels = benefits.filter((b) => b.preferred).map((b) => b.label);
@@ -94,15 +119,42 @@ export function UploadForm({
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
 
   const [title, setTitle] = useState("");
-  const [material, setMaterial] = useState<string>(DEFAULT_MATERIAL);
+  const [material, setMaterial] = useState<string>(startingMaterial);
   const [quantity, setQuantity] = useState<number>(1);
-  const [color, setColor] = useState<string>(DEFAULT_COLOR.name);
+  const [color, setColor] = useState<string>(startingPalette[0]?.name ?? DEFAULT_COLOR.name);
   const [tip, setTip] = useState<string>(defaultTip);
   const [note, setNote] = useState("");
   const [printSettings, setPrintSettings] = useState("");
   const [extraColors, setExtraColors] = useState<string[]>([]);
   const [multi, setMulti] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
+
+  // The material actually on screen, and the palette that goes with it. Both
+  // read the same value, so the swatches can never show one material's colours
+  // while the control says another.
+  const shownMaterial = materialNames.includes(material)
+    ? material
+    : materialNames[0] ?? DEFAULT_MATERIAL;
+  const palette = paletteFor(shownMaterial);
+
+  /**
+   * Switching material switches the palette, so every colour choice has to move
+   * with it: a colour the new material is not stocked in is not one anybody can
+   * ask for, and leaving it selected would post a value the server refuses.
+   * The primary colour is kept whenever the new list also offers it — "Teal"
+   * means Teal on either spool, so re-picking it by hand would be busywork —
+   * and any extra colours the new list does not offer are dropped, because a
+   * multi-colour print is a list of spools and a spool that does not exist
+   * cannot be loaded.
+   */
+  function chooseMaterial(next: string) {
+    const nextPalette = paletteFor(next);
+    setMaterial(next);
+    setColor((current) =>
+      nextPalette.some((c) => c.name === current) ? current : nextPalette[0]?.name ?? DEFAULT_COLOR.name,
+    );
+    setExtraColors((current) => current.filter((name) => nextPalette.some((c) => c.name === name)));
+  }
 
   /**
    * Client-side checks are for fast feedback only — the server re-runs all of
@@ -120,15 +172,15 @@ export function UploadForm({
         message: "Only .stl and .3mf files can be printed here.",
       });
     }
-    if (picked.size > MAX_UPLOAD_BYTES) {
+    if (picked.size > maxBytes) {
       setFile(null);
       return setPhase({
         kind: "error",
-        message: `That file is ${formatBytes(picked.size)} — the limit is ${formatBytes(MAX_UPLOAD_BYTES)}.`,
+        message: `That file is ${formatBytes(picked.size)} — the limit is ${formatBytes(maxBytes)}.`,
       });
     }
     setFile(picked);
-  }, []);
+  }, [maxBytes]);
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -251,7 +303,7 @@ export function UploadForm({
             ? `Uploading… ${phase.percent}%`
             : file
               ? `${formatBytes(file.size)} · checked on the server when you send it`
-              : `or click to choose a file · ${formatBytes(MAX_UPLOAD_BYTES)} max`}
+              : `or click to choose a file · ${formatBytes(maxBytes)} max`}
         </span>
 
         {busy && (
@@ -288,8 +340,8 @@ export function UploadForm({
           <Segmented
             label="Material"
             options={materialNames.length > 0 ? materialNames : [DEFAULT_MATERIAL]}
-            value={materialNames.includes(material) ? material : materialNames[0] ?? DEFAULT_MATERIAL}
-            onChange={setMaterial}
+            value={shownMaterial}
+            onChange={chooseMaterial}
           />
         </div>
       </div>
@@ -326,7 +378,7 @@ export function UploadForm({
           Colour you&rsquo;re hoping for
         </legend>
         <div className="flex flex-wrap gap-[13.2px]">
-          {COLORS.map((c) => {
+          {palette.map((c) => {
             const active = c.name === color;
             return (
               <button
@@ -382,7 +434,7 @@ export function UploadForm({
 
           {multi && (
             <div className="mt-[11px] flex flex-wrap gap-[13.2px]">
-              {COLORS.filter((c) => c.name !== color).map((c) => {
+              {palette.filter((c) => c.name !== color).map((c) => {
                 const idx = extraColors.indexOf(c.name);
                 const picked = idx >= 0;
                 return (
