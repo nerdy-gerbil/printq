@@ -3,7 +3,14 @@
 import { redirect } from "next/navigation";
 
 import { requireAdmin } from "@/lib/authz";
-import { MaterialProblem, createMaterial, renameMaterial, setMaterialActive, setMaterialRate } from "@/lib/materials";
+import {
+  MaterialProblem,
+  createMaterial,
+  renameMaterial,
+  setMaterialActive,
+  setMaterialDensity,
+  setMaterialRate,
+} from "@/lib/materials";
 
 /**
  * The admin's controls for the materials catalogue, as plain server-action
@@ -61,6 +68,18 @@ export async function setMaterialRateAction(formData: FormData): Promise<void> {
   try {
     await setMaterialRate(admin, name, formData.get("dollarsPerKg") ?? "");
     back({ toast: `Rate saved for “${name}”` });
+  } catch (error) {
+    if (error instanceof MaterialProblem) back({ error: error.message });
+    throw error;
+  }
+}
+
+export async function setMaterialDensityAction(formData: FormData): Promise<void> {
+  const admin = await requireAdmin();
+  const name = String(formData.get("name") ?? "");
+  try {
+    await setMaterialDensity(admin, name, formData.get("densityGcm3") ?? "");
+    back({ toast: `Density saved for “${name}”` });
   } catch (error) {
     if (error instanceof MaterialProblem) back({ error: error.message });
     throw error;

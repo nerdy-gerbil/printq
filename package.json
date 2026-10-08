@@ -34,6 +34,7 @@
     "verify:auth": "tsx scripts/verify-auth.ts",
     "probe:security": "tsx scripts/security-probe.ts",
     "verify:models": "tsx scripts/verify-models.ts",
+    "verify:estimate": "tsx scripts/verify-estimate.ts",
     "verify:upload": "tsx scripts/verify-upload.ts",
     "verify:passkey": "tsx scripts/verify-passkey.ts",
     "check:secrets": "tsx scripts/check-secrets.ts",

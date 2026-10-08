@@ -1,11 +1,12 @@
 import { printerName, requireUser } from "@/lib/authz";
 import { listActiveBenefits } from "@/lib/benefits";
 import { activePalettes } from "@/lib/colors";
+import { machineRate } from "@/lib/cost";
 import { listActiveMaterials } from "@/lib/materials";
 import { getSettings } from "@/lib/settings";
 import { AppHeader } from "@/components/app-header";
 import { Kicker, Notice } from "@/components/ui";
-import { UploadForm } from "./upload-form";
+import { UploadForm, type EstimateBasis } from "./upload-form";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,36 @@ export default async function UploadPage() {
     label: b.label,
     preferred: b.preferred,
   }));
-  const materialNames = (await listActiveMaterials()).map((m) => m.name);
-  // Colours belong to a material, so the form needs every material's list and
-  // swaps between them itself — see the Colours tab on the settings screen.
-  const palettes = await activePalettes();
+  const [materials, palettes, dollarsPerHour] = await Promise.all([
+    listActiveMaterials(),
+    // Colours belong to a material, so the form needs every material's list and
+    // swaps between them itself — see the Colours tab on the settings screen.
+    activePalettes(),
+    machineRate(),
+  ]);
+  const materialNames = materials.map((m) => m.name);
+
+  /*
+   * What the form prices a file from. The file has not been sent when the price
+   * appears, so this arithmetic runs in the browser and needs the shop's own
+   * numbers handed to it — the same rate rows the ledger reads once the print
+   * is real, so an estimate and the real figure can never be worked out from
+   * two different prices.
+   */
+  const basis: EstimateBasis = {
+    currency: settings.currency,
+    infillPercent: settings.assumedInfillPercent,
+    flowMm3s: settings.estimateFlowMm3s,
+    dollarsPerHour,
+    markupPercent: settings.markupPercent,
+    minimumCharge: settings.minimumCharge,
+    materials: Object.fromEntries(
+      materials.map((m) => [
+        m.name,
+        { dollarsPerKg: m.dollarsPerKg ?? 0, densityGcm3: m.densityGcm3 },
+      ]),
+    ),
+  };
 
   return (
     <>
@@ -58,6 +85,7 @@ export default async function UploadPage() {
             benefits={benefits}
             materialNames={materialNames}
             palettes={palettes}
+            basis={basis}
             defaultMaterial={settings.defaultMaterial}
             maxBytes={settings.maxUploadMb * 1024 * 1024}
           />

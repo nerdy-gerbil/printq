@@ -15,6 +15,9 @@ import {
   MAX_BYTES,
   type Rejection,
 } from "../src/lib/models";
+// The plausibility guard on a measured volume, which decides whether the app
+// shows an estimate at all.
+import { enclosedVolume } from "../src/lib/mesh";
 
 let passed = 0;
 const failures: string[] = [];
@@ -29,22 +32,42 @@ const section = (t: string) => console.info(`\n── ${t} ${"─".repeat(Math.m
 // Fixtures
 // ---------------------------------------------------------------------------
 
+/**
+ * The eight corners of an axis-aligned box from the origin to (x, y, z), and
+ * the twelve triangles enclosing it as indices into that list.
+ *
+ * The index table is shared with the 3MF fixtures below, because a real 3MF
+ * names its corners by index rather than by coordinate. Those fixtures used to
+ * write the same degenerate triangle twelve times — `v1="0" v2="1" v3="2"` —
+ * which still measures the right box (the box comes from the vertex list) while
+ * enclosing no volume at all, so it could not tell a working volume scan from a
+ * broken one.
+ */
+const BOX_CORNERS = (x: number, y: number, z: number): number[][] => [
+  [0, 0, 0], [x, 0, 0], [x, y, 0], [0, y, 0],
+  [0, 0, z], [x, 0, z], [x, y, z], [0, y, z],
+];
+
+const BOX_FACES: ReadonlyArray<readonly [number, number, number]> = [
+  [0, 1, 2], [0, 2, 3], // bottom
+  [4, 6, 5], [4, 7, 6], // top
+  [0, 4, 5], [0, 5, 1], // front
+  [1, 5, 6], [1, 6, 2], // right
+  [2, 6, 7], [2, 7, 3], // back
+  [3, 7, 4], [3, 4, 0], // left
+];
+
 /** The 12 triangles of an axis-aligned box from the origin to (x, y, z). */
 function boxTriangles(x: number, y: number, z: number): number[][] {
-  const p = [
-    [0, 0, 0], [x, 0, 0], [x, y, 0], [0, y, 0],
-    [0, 0, z], [x, 0, z], [x, y, z], [0, y, z],
-  ];
-  const faces = [
-    [0, 1, 2], [0, 2, 3], // bottom
-    [4, 6, 5], [4, 7, 6], // top
-    [0, 4, 5], [0, 5, 1], // front
-    [1, 5, 6], [1, 6, 2], // right
-    [2, 6, 7], [2, 7, 3], // back
-    [3, 7, 4], [3, 4, 0], // left
-  ];
-  return faces.map((f) => f.flatMap((i) => p[i]!));
+  const p = BOX_CORNERS(x, y, z);
+  return BOX_FACES.map((f) => f.flatMap((i) => p[i]!));
 }
+
+/** The same twelve, as a 3MF writes them: corners named by index. */
+const boxTriangleXml = (separator: string) =>
+  BOX_FACES.map(
+    (face, i) => `<triangle v1="${face[0]}" v2="${face[1]}" v3="${face[2]}" i="${i}"/>`,
+  ).join(separator);
 
 function binaryStl(x: number, y: number, z: number, header = "generated"): Uint8Array {
   const tris = boxTriangles(x, y, z);
@@ -75,16 +98,13 @@ function asciiStl(x: number, y: number, z: number): Uint8Array {
 }
 
 function threeMf(x: number, y: number, z: number, unit = "millimeter"): Uint8Array {
-  const p = [
-    [0, 0, 0], [x, 0, 0], [x, y, 0], [0, y, 0],
-    [0, 0, z], [x, 0, z], [x, y, z], [0, y, z],
-  ];
+  const p = BOX_CORNERS(x, y, z);
   const model =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<model unit="${unit}" xml:lang="en-US">\n<resources><object id="1" type="model"><mesh>\n<vertices>\n` +
     p.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("\n") +
     `\n</vertices>\n<triangles>\n` +
-    boxTriangles(1, 1, 1).map((_, i) => `<triangle v1="0" v2="1" v3="2" i="${i}"/>`).join("\n") +
+    boxTriangleXml("\n") +
     `\n</triangles>\n</mesh></object></resources>\n</model>`;
   return zipSync({
     "[Content_Types].xml": new TextEncoder().encode(`<?xml version="1.0"?><Types/>`),
@@ -109,7 +129,7 @@ function threeMfProduction(x: number, y: number, z: number): Uint8Array {
     `<object id="2" type="model"><mesh><vertices>` +
     p.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("") +
     `</vertices><triangles>` +
-    boxTriangles(1, 1, 1).map(() => `<triangle v1="0" v2="1" v3="2"/>`).join("") +
+    boxTriangleXml("") +
     `</triangles></mesh></object></resources>\n</model>`;
   const root =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
@@ -142,7 +162,7 @@ function threeMfScaled(x: number, y: number, z: number): Uint8Array {
     `<object id="1" type="model"><mesh><vertices>` +
     p.map((v) => `<vertex x="${v[0]}" y="${v[1]}" z="${v[2]}"/>`).join("") +
     `</vertices><triangles>` +
-    boxTriangles(1, 1, 1).map(() => `<triangle v1="0" v2="1" v3="2"/>`).join("") +
+    boxTriangleXml("") +
     `</triangles></mesh></object></resources>` +
     `<build><item objectid="1" transform="${s} 0 0 0 ${s} 0 0 0 ${s} 0 0 0"/></build>\n</model>`;
   return zipSync({
@@ -168,13 +188,28 @@ const asc = inspectModel("hook.stl", asciiStl(120, 18, 12));
 check("ASCII STL accepted", asc.ok, why(asc));
 check("ASCII STL dimensions match the mesh", ok(asc)?.dims === "120 × 18 × 12 mm", ok(asc)?.dims);
 
+// The volume, which the upload form turns into filament and a price. The
+// fixtures are closed boxes, so the answer is not approximate: 78 × 40 × 22.
+check("a closed binary STL reports the volume it encloses",
+      ok(bin)?.volumeMm3 === 78 * 40 * 22, String(ok(bin)?.volumeMm3));
+check("so does an ASCII one",
+      ok(asc)?.volumeMm3 === 120 * 18 * 12, String(ok(asc)?.volumeMm3));
+
 const mf = inspectModel("sign.3mf", threeMf(160, 60, 8));
 check("3MF accepted", mf.ok, why(mf));
 check("3MF dimensions match the mesh", ok(mf)?.dims === "160 × 60 × 8 mm", ok(mf)?.dims);
 
+// Volume comes out in millimetres whatever unit the file declared, because the
+// transforms and the unit scale are applied to the vertices before the sums.
+check("a 3MF reports its volume in mm³",
+      ok(mf)?.volumeMm3 === 160 * 60 * 8, String(ok(mf)?.volumeMm3));
+
 const inches = inspectModel("sign.3mf", threeMf(1, 2, 4, "inch"));
 check("3MF unit attribute is honoured (inch -> mm)",
       ok(inches)?.dims === "25 × 51 × 102 mm", ok(inches)?.dims);
+check("and the volume follows the unit (1 × 2 × 4 inch in mm³)",
+      Math.abs((ok(inches)?.volumeMm3 ?? 0) - 25.4 * 50.8 * 101.6) < 0.2,
+      String(ok(inches)?.volumeMm3));
 
 const microns = inspectModel("tiny.3mf", threeMf(10000, 20000, 5000, "micron"));
 check("3MF micron unit is honoured", ok(microns)?.dims === "10 × 20 × 5 mm", ok(microns)?.dims);
@@ -185,12 +220,16 @@ const prod = inspectModel("plate.3mf", threeMfProduction(30, 20, 10));
 check("3MF production extension accepted (geometry in a component part)", prod.ok, why(prod));
 check("its dimensions come from the referenced part",
       ok(prod)?.dims === "30 × 20 × 10 mm", ok(prod)?.dims);
+check("and so does its volume, across the component reference",
+      ok(prod)?.volumeMm3 === 30 * 20 * 10, String(ok(prod)?.volumeMm3));
 
 // The bug this guards: a Cura-style 3MF measured 0 × 0 × 0 because the size
 // lived in the build item's transform, which was not applied.
 const scaled = inspectModel("cura.3mf", threeMfScaled(30, 20, 10));
 check("3MF build-item transform is applied (not 0 × 0 × 0)",
       ok(scaled)?.dims === "30 × 20 × 10 mm", ok(scaled)?.dims);
+check("and the volume is the placed solid, not the local space",
+      ok(scaled)?.volumeMm3 === 30 * 20 * 10, String(ok(scaled)?.volumeMm3));
 
 // A binary STL whose 80-byte header begins with the word "solid" — the classic
 // way a naive sniffer misreads the format.
@@ -263,6 +302,28 @@ const bombResult = inspectModel("bomb.3mf", bomb);
 const elapsed = Date.now() - t0;
 check("a zip bomb is refused", !bombResult.ok, why(bombResult));
 check("and refused quickly, without inflating it", elapsed < 4000, `took ${elapsed}ms`);
+
+section("a volume is only reported when it can be supported");
+
+// The guard, tested directly: a sum that came out negative (a surface wound the
+// other way, or one that encloses nothing) and one larger than the box that
+// contains it (an open surface, where the arithmetic falls apart) are both
+// refused. A caller handed null shows no estimate — which is the point.
+const box = { min: [0, 0, 0] as [number, number, number], max: [10, 10, 10] as [number, number, number] };
+check("a plausible sum is kept", enclosedVolume(1000, box) === 1000);
+check("a sum larger than the bounding box is refused", enclosedVolume(1001, box) === null);
+// Which way a surface is wound is the exporter's business: clockwise and
+// anticlockwise describe the same solid, so the sign is dropped and the
+// magnitude kept.
+check("a sum wound the other way is the same volume", enclosedVolume(-1000, box) === 1000);
+check("a sum of nothing is refused", enclosedVolume(0, box) === null);
+
+// And end to end: the fixtures are closed, so every format reports a number.
+check("an STL that measures also carries a volume",
+      typeof ok(bin)?.volumeMm3 === "number");
+check("so does a 3MF", typeof ok(mf)?.volumeMm3 === "number");
+check("the volume is measured, never derived from the box",
+      ok(trap)?.volumeMm3 === 30 * 30 * 30, String(ok(trap)?.volumeMm3));
 
 section("presentation helpers");
 

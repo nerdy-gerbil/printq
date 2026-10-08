@@ -65,7 +65,7 @@ const SECTION_COPY: Record<SettingSection, { title: string; blurb: string }> = {
   orders: {
     title: "New orders",
     blurb:
-      "Whether the shop is open, what the upload form starts on, and how large a model may be. Pausing stops new requests; it never touches a ticket already on the rail.",
+      "Whether the shop is open, what the upload form starts on, how large a model may be, and the two assumptions behind the estimate it shows. Pausing stops new requests; it never touches a ticket already on the rail.",
   },
   people: {
     title: "Guests and invitations",
@@ -256,7 +256,8 @@ export default async function SettingsPage({
         <p className="m-0 mb-[22px] max-w-[62ch] text-[15px] text-ink-2">
           The settings that are not about one material or one ticket — what
           money looks like, what the app asks for over cost, whether it is
-          taking work, how big an upload may be, and what it calls the team.
+          taking work, how big an upload may be, what an estimate assumes, and
+          what it calls the team.
           Every change here is recorded in the audit trail.
         </p>
 

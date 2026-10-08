@@ -80,6 +80,11 @@ that: there is no multi-tenancy, no billing, and no queue theory.
   form offers the chosen material's own list and swaps it the moment the
   material changes, and a ticket keeps the swatch it was asked for, so
   recolouring a spool never rewrites history.
+- **A price before you send it** — the upload form measures the mesh in the
+  browser, multiplies the volume it encloses by the material's own density, and
+  shows what the print is likely to cost, at the shop's own rates and its
+  assumed infill. It is labelled an estimate because it is one: the ledger's
+  figure comes from grams weighed and minutes on the bed.
 - **A cost ledger, derived not stored** — the team records what a finished
   print *weighed* (grams) and *ran* (minutes) on the ticket; the app derives
   the cost at render from the current rates: $/kg per material, one $/hour for

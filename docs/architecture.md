@@ -181,7 +181,7 @@ All five are settled, and recorded here so nobody has to re-derive them:
 | *Printing* column label — README §2 says amber `#79541a`, the prototype uses teal `#0b4340` | **Amber.** The tokens call amber "warning / in-progress only", and Printing is the in-progress state. It also makes the live column findable. |
 | Where declined stories go — `Declined` is not in the flow, so it has no column | **Off the board entirely.** The board is for work that is still moving; the profile at `/me` carries the whole history, declined included. |
 | The whole-board empty state, which the handoff says to ask about | **Minimal.** One quiet panel saying what is true, with the Upload button already above it. No invented onboarding. |
-| Print-time estimates | **Dropped.** See below. |
+| Print-time estimates | **Dropped as a fact; shown as a labelled estimate.** See below. |
 
 ### The one stat that changed
 
@@ -191,21 +191,33 @@ one it counts something real — how much geometry has actually come off the
 plate, in bytes. Swap it back the day a slicer is wired in and the hours are
 known rather than assumed.
 
-### Why there is no print-time estimate
+### Why print time is estimated, not stated
 
 A figure derived from the bounding box is a guess dressed as a measurement —
 it cannot know infill, layer height, wall count or the printer's speeds, and
-it is worst on exactly the models people care about. The handoff's definition
-of done says nothing should claim to know what the printer is doing, and a
-number someone might plan their afternoon around is the kind of claim it warns
-about.
+it is worst on exactly the models people care about. That reasoning dropped
+the old bounding-box heuristic, and it is still why a story in *Printing* says
+`on the bed` and nothing about duration.
 
-So the app shows only what it measured: **dimensions and file size**. A story
-in *Printing* says `on the bed` and nothing more.
+What changed is that the app now measures something worth estimating from.
+The mesh is scanned as it is validated (`src/lib/mesh.ts`, and the 3MF walk in
+`src/lib/models.ts`) for the volume its surface encloses, and that volume is a
+fact, stored on the story as `volumeMm3` beside `dims`. The upload form turns
+it into filament, a print time and a price (`src/lib/estimate.ts`) using the
+material's own density and two assumptions the owner sets on the settings
+screen — assumed infill and assumed print speed. Every one of those numbers is
+attributed on the screen: the panel names the infill, the density and both
+rates it used, and calls itself an estimate rather than a quote.
 
-To add a real one, run `prusa-slicer --export-gcode` in a background job after
-upload and read `; estimated printing time` out of the G-code. `src/lib/models.ts`
-says so at the point where the old heuristic used to live.
+The line this draws: **measured facts are stated flatly, everything inferred
+is shown attached to what it assumes.** The cost ledger is still the measured
+half — weighed grams and minutes on the bed — and it borrows the estimate's
+pricing rule so the two cannot disagree about what the shop charges.
+
+A figure with no assumption left in it still needs a slicer: run
+`prusa-slicer --export-gcode` in a background job after upload and read
+`; estimated printing time` out of the G-code. `src/lib/models.ts` says so at
+the point where the old heuristic used to live.
 
 ## The API, and why there is a service layer
 

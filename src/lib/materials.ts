@@ -39,6 +39,17 @@ const RateSchema = z.coerce
   .min(0, "A price cannot be negative.")
   .max(10_000, "That price looks like a typo.");
 
+/**
+ * g/cm³. The floor is under foaming LW-PLA (about 0.8) and the ceiling over a
+ * metal-filled filament, so the range covers real spools while still catching
+ * the typo that matters: a kilogram-per-cubic-metre figure typed into a
+ * grams-per-cubic-centimetre box.
+ */
+const DensitySchema = z.coerce
+  .number()
+  .min(0.1, "Density is in grams per cubic centimetre — PLA is about 1.24.")
+  .max(5, "That density looks like a typo — grams per cubic centimetre, not kilograms.");
+
 function assertAdmin(actor: Actor) {
   if (actor.role !== "admin") {
     throw new MaterialProblem("Only an admin manages materials.");
@@ -62,6 +73,12 @@ export type MaterialRow = {
   sortOrder: number;
   /** $/kg, or null when no rate has been set yet. */
   dollarsPerKg: number | null;
+  /**
+   * Filament density, g/cm³ — what turns a mesh volume into grams, and so into
+   * money. Always a number: the column has a default, and a row that predates
+   * it is read as that default rather than as a hole in the arithmetic.
+   */
+  densityGcm3: number;
 };
 
 const ORDER = [{ sortOrder: "asc" as const }, { name: "asc" as const }];
@@ -70,24 +87,32 @@ const ORDER = [{ sortOrder: "asc" as const }, { name: "asc" as const }];
 export function listActiveMaterials(): Promise<MaterialRow[]> {
   return db.material.findMany({
     where: { active: true },
-    select: { id: true, name: true, active: true, sortOrder: true },
+    select: { id: true, name: true, active: true, sortOrder: true, densityGcm3: true },
     orderBy: ORDER,
   }).then(async (rows) => {
     const rates = await db.materialRate.findMany();
     const byMaterial = new Map(rates.map((r) => [r.material, r.dollarsPerKg]));
-    return rows.map((r) => ({ ...r, dollarsPerKg: byMaterial.get(r.name) ?? null }));
+    return rows.map((r) => ({
+      ...r,
+      densityGcm3: r.densityGcm3 ?? 1.24,
+      dollarsPerKg: byMaterial.get(r.name) ?? null,
+    }));
   });
 }
 
 /** Everything, for the admin screen — retired materials included. */
 export function listAllMaterials(): Promise<MaterialRow[]> {
   return db.material.findMany({
-    select: { id: true, name: true, active: true, sortOrder: true },
+    select: { id: true, name: true, active: true, sortOrder: true, densityGcm3: true },
     orderBy: ORDER,
   }).then(async (rows) => {
     const rates = await db.materialRate.findMany();
     const byMaterial = new Map(rates.map((r) => [r.material, r.dollarsPerKg]));
-    return rows.map((r) => ({ ...r, dollarsPerKg: byMaterial.get(r.name) ?? null }));
+    return rows.map((r) => ({
+      ...r,
+      densityGcm3: r.densityGcm3 ?? 1.24,
+      dollarsPerKg: byMaterial.get(r.name) ?? null,
+    }));
   });
 }
 
@@ -188,6 +213,43 @@ export async function setMaterialRate(actor: Actor, name: string, rawDollars: un
     actor,
     subject: name,
     detail: { from: before?.dollarsPerKg ?? null, to: parsed.data },
+  });
+  refresh();
+}
+
+/**
+ * Set the filament density for a material, which is what the estimate on the
+ * upload form divides the measured mesh volume by to get grams.
+ *
+ * Its own form and its own audit action rather than folded into the price: the
+ * two answer different questions, a wrong price costs money and a wrong density
+ * costs an estimate, and the trail reads better when they are separate events.
+ */
+export async function setMaterialDensity(
+  actor: Actor,
+  name: string,
+  rawGcm3: unknown,
+): Promise<void> {
+  assertAdmin(actor);
+
+  const parsed = DensitySchema.safeParse(
+    typeof rawGcm3 === "string" || typeof rawGcm3 === "number" ? rawGcm3 : "",
+  );
+  if (!parsed.success) throw new MaterialProblem(parsed.error.issues[0]?.message ?? "Check the density.");
+
+  const exists = await db.material.findUnique({
+    where: { name },
+    select: { name: true, densityGcm3: true },
+  });
+  if (!exists) throw new MaterialProblem("That material no longer exists.");
+
+  await db.material.update({ where: { name }, data: { densityGcm3: parsed.data } });
+
+  await record({
+    action: "material.density_changed",
+    actor,
+    subject: name,
+    detail: { from: exists.densityGcm3 ?? null, to: parsed.data },
   });
   refresh();
 }

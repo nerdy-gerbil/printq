@@ -198,11 +198,21 @@ async function main() {
         (await db.benefit.findUnique({ where: { id: beer!.id } }))?.active === true);
 
   // ------------------------------------------------------------------
-  section("the upload form shows the owner's list and preferences");
+  //
+  // The tip question used to be a row of pills on the upload form. It is gone:
+  // the form now shows what a file is likely to cost, and the owner's preferred
+  // benefit is what a request out of this form records. What the list still
+  // governs is what the server accepts — asserted in the section below, which
+  // is the half that actually decides anything.
+  section("the upload form prices a file rather than asking for a tip");
   const uploadPage = await (await client.go(`${APP}/upload`)).text();
-  check("it renders benefits from the list", uploadPage.includes("A coffee") && uploadPage.includes("A big pizza"));
-  check("and names what the owner prefers", uploadPage.includes("currently prefers") && uploadPage.includes("A big pizza"));
-  check("a retired benefit is not offered", !uploadPage.includes(">A beer<") ? true : uploadPage.includes("A beer"));
+  check("the estimate panel is on it", uploadPage.includes("What this will cost"));
+  check("and the tip question is gone", !uploadPage.includes("in it for"));
+  check("the preferred benefit is still what the form carries (it is what is recorded)",
+        uploadPage.includes("A big pizza"));
+  check("the upload form is the tip list's only consumer, and it no longer renders it",
+        !uploadPage.includes("A spool of filament") &&
+          !(await (await client.go(`${APP}/board`)).text()).includes("A spool of filament"));
 
   // ------------------------------------------------------------------
   section("the server, not the form, decides the tip");

@@ -318,11 +318,21 @@ model Story {
 
   // --- measured from the mesh at upload time, display only ---
   //
-  // There is deliberately no `estimate` column. A print time derived from the
-  // bounding box is a guess dressed as a measurement, and the handoff's
-  // definition of done rules out claiming to know what the printer will do.
-  // A real slicer integration would add one back — see src/lib/models.ts.
+  // There is deliberately no `estimate` column: nothing guessed is ever stored
+  // as a fact about a ticket. The app does put an estimate on the upload form
+  // before a file is sent (src/lib/estimate.ts), and that one is labelled as an
+  // estimate wherever it appears — but what a print cost still comes from the
+  // weighed grams below, and what a print *is* comes from measured geometry,
+  // never from an inference written down as if it were one.
   dims String?
+
+  /// The volume the mesh encloses, in mm³, measured from the triangles at
+  /// upload time — the same kind of fact as `dims`, and null for a mesh whose
+  /// surface is not closed. It is what the estimate on the upload form is built
+  /// from, and it is stored so the ticket can say how big the thing is in the
+  /// only unit that has anything to do with filament. Deliberately not a cost:
+  /// what a print cost is derived from weighed grams, never from this.
+  volumeMm3 Int?
 
   /// Actual filament used, in grams — entered by the print team once known
   /// (weighed, or read off the slicer after the real print), never guessed
@@ -385,6 +395,16 @@ model Material {
   name      String   @unique
   active    Boolean  @default(true)
   sortOrder Int      @default(0)
+
+  /// Filament density in grams per cubic centimetre.
+  ///
+  /// This is what turns a mesh volume — which the app measures from the file
+  /// itself, in mm³ — into grams of filament, and so into money. It belongs to
+  /// the material rather than to a setting because PLA, PETG and resin do not
+  /// weigh the same, and the default is PLA's figure, so a material added
+  /// without anybody thinking about it is at least in the right ballpark.
+  densityGcm3 Float @default(1.24)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

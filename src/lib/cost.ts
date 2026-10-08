@@ -6,15 +6,24 @@ import { db } from "@/lib/db";
 import { record } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
 import type { Actor } from "@/lib/scope";
+// The pricing rule, and the way a print time is written down, come from
+// `estimate.ts`: the upload form imports that module to price a file in the
+// browser before it is sent, and a guess and a measurement must not be charged
+// differently. This module is the half that can reach the database.
+import { priceFromCost } from "@/lib/estimate";
 
 /**
  * The cost of a printed ticket, derived — never stored, never estimated.
  *
  * The inputs are two numbers the print team records once the print is real:
- * filament weighed in grams, and wall-clock minutes. Nothing infers either at
- * upload time, for the same rule that dropped the print-time estimate: a
- * number nobody measured is not shown. The rates are owner-managed data
- * (`MaterialRate` per $/kg, one shared `MachineRate` per $/hour).
+ * filament weighed in grams, and wall-clock minutes. Nothing here infers
+ * either: what a print costs is always measured. The rates are owner-managed
+ * data (`MaterialRate` per $/kg, one shared `MachineRate` per $/hour).
+ *
+ * This is the measured half of the app's money. The estimate a requester sees
+ * before sending a file is `estimate.ts`, which works from a measured volume,
+ * states its assumptions, and never pretends to be this — and which lends this
+ * module its markup and floor, so the two cannot charge differently.
  *
  * Cost is computed at render from the CURRENT rates, not snapshotted: a past
  * ticket does not pretend today's filament price is what it cost. If the shop
@@ -104,13 +113,12 @@ export function deriveCost(input: CostInput, rates: RateCard): Cost | null {
   const machine = (input.printMinutes / 60) * rates.dollarsPerHour;
   const subtotal = filament + machine;
 
-  const markupPercent = rates.markupPercent ?? 0;
-  const minimumCharge = rates.minimumCharge ?? 0;
-
-  const markup = subtotal * (markupPercent / 100);
-  const marked = subtotal + markup;
-  const minimumApplied = minimumCharge > 0 && marked < minimumCharge;
-  const price = minimumApplied ? minimumCharge : marked;
+  const { markup, price, minimumApplied } = priceFromCost({
+    filament,
+    machine,
+    markupPercent: rates.markupPercent,
+    minimumCharge: rates.minimumCharge,
+  });
 
   return {
     filament: round(filament),
@@ -186,10 +194,16 @@ export async function setMachineRate(actor: Actor, rawDollars: unknown): Promise
   revalidatePath("/queue");
 }
 
-/** "3 h 25 m" / "48 m" — minutes as a person reads them. */
-export function formatMinutes(m: number): string {
-  if (m < 60) return `${m} m`;
-  const h = Math.floor(m / 60);
-  const rest = m % 60;
-  return rest === 0 ? `${h} h` : `${h} h ${rest} m`;
+// `formatMinutes` is defined in `estimate.ts` and re-exported here, because
+// every page already reaches for it from this module and the upload form needs
+// it from a module with no database behind it.
+export { formatMinutes } from "@/lib/estimate";
+
+/**
+ * The machine's price per hour on its own, for a page that prices a file in the
+ * browser and so cannot ask `currentRates` for one material's rate card.
+ */
+export async function machineRate(): Promise<number> {
+  const row = await db.machineRate.findUnique({ where: { id: "default" } });
+  return row?.dollarsPerHour ?? 0;
 }

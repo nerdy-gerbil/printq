@@ -266,6 +266,9 @@ async function handleUpload(request: Request, user: Actor, maxBytes: number) {
         mimeType: MIME_FOR[extension] ?? "application/octet-stream",
         storageKey: key,
         dims: inspection.dims,
+        // The measured volume, not an estimate of anything: what the mesh
+        // encloses. Null for a surface that is not closed.
+        volumeMm3: inspection.volumeMm3,
       },
     });
   } catch (error) {

@@ -54,6 +54,7 @@ export type AuditAction =
   | "material.retired"
   | "material.restored"
   | "material.rate_changed"
+  | "material.density_changed"
   | "machine.rate_changed"
   // colours (the per-material palette)
   | "color.created"

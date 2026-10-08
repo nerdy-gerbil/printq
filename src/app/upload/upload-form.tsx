@@ -14,11 +14,36 @@ import {
 // it would pull `fflate` and the mesh parser into the browser bundle — which
 // is why these three used to be copied into this file by hand.
 import { ACCEPTED_EXTENSIONS, formatBytes } from "@/lib/upload-limits";
+// The price of a file that has not been sent yet. Everything these three reach
+// for is free of `fflate`, of the database and of `server-only`, on purpose:
+// `mesh.ts` is the same scan the server validates with, and `estimate.ts` is
+// the same pricing rule the ledger uses once the print is real.
+import { estimatePrint, formatMinutes } from "@/lib/estimate";
+import { scanStl } from "@/lib/mesh";
+import { formatMoney, formatRate } from "@/lib/money";
 
 /** One owner-managed tip option, passed from the server (see upload/page.tsx). */
 type Benefit = { label: string; preferred: boolean };
 /** One owner-managed material, passed from the server (see upload/page.tsx). */
 export type MaterialOption = { name: string };
+
+/**
+ * What an estimate is worked out from, read on the server and handed down.
+ *
+ * The form does this arithmetic in the browser because the file has not been
+ * sent yet — so it needs the shop's own numbers rather than its own guesses:
+ * each material's price per kilogram and its density, the machine's rate, and
+ * the two assumptions the owner has set on the settings screen.
+ */
+export type EstimateBasis = {
+  currency: string;
+  infillPercent: number;
+  flowMm3s: number;
+  dollarsPerHour: number;
+  markupPercent: number;
+  minimumCharge: number;
+  materials: Record<string, { dollarsPerKg: number; densityGcm3: number }>;
+};
 import { Button, Label, Notice } from "@/components/ui";
 
 type Phase =
@@ -74,11 +99,14 @@ export function UploadForm({
   benefits,
   materialNames,
   palettes,
+  basis,
   defaultMaterial,
   maxBytes,
 }: {
   owner: string;
   benefits: Benefit[];
+  /** The rates and assumptions the estimate is built from. See EstimateBasis. */
+  basis: EstimateBasis;
   materialNames: string[];
   /**
    * Colour options per material, resolved on the server (src/lib/colors.ts).
@@ -122,12 +150,49 @@ export function UploadForm({
   const [material, setMaterial] = useState<string>(startingMaterial);
   const [quantity, setQuantity] = useState<number>(1);
   const [color, setColor] = useState<string>(startingPalette[0]?.name ?? DEFAULT_COLOR.name);
-  const [tip, setTip] = useState<string>(defaultTip);
+  /*
+   * The tip is still recorded, but it is no longer asked for: the estimate took
+   * the box's place on this form. The owner's preferred perk stands as the
+   * answer, so the chip on a ticket, the history filter and the API all keep
+   * working exactly as they did. Whether the tip survives as an idea is the
+   * owner's call, and not one to settle by dropping a column.
+   */
+  const [tip] = useState<string>(defaultTip);
   const [note, setNote] = useState("");
   const [printSettings, setPrintSettings] = useState("");
   const [extraColors, setExtraColors] = useState<string[]>([]);
   const [multi, setMulti] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
+  /*
+   * The volume read out of the chosen file, in mm³, and whether that reading is
+   * still going. Only STL is measured here: a 3MF is a zip, and unzipping it in
+   * the tab would drag the archive reader into the bundle for a number the
+   * server measures on arrival anyway.
+   */
+  const [meshVolume, setMeshVolume] = useState<number | null>(null);
+  const [measuring, setMeasuring] = useState(false);
+
+  /**
+   * Read the enclosed volume out of the file the requester just picked. This is
+   * a measurement of geometry, not a guess — `scanStl` is the very code the
+   * server validates with (see src/lib/mesh.ts), so the number on screen and
+   * the number on the ticket are read the same way.
+   */
+  const measure = useCallback(async (picked: File) => {
+    setMeshVolume(null);
+    if (!picked.name.toLowerCase().endsWith(".stl")) return;
+    setMeasuring(true);
+    try {
+      const bytes = new Uint8Array(await picked.arrayBuffer());
+      setMeshVolume(scanStl(bytes)?.volumeMm3 ?? null);
+    } catch {
+      // An unreadable file is the server's to refuse, with a reason. Here it
+      // simply means there is nothing to price.
+      setMeshVolume(null);
+    } finally {
+      setMeasuring(false);
+    }
+  }, []);
 
   // The material actually on screen, and the palette that goes with it. Both
   // read the same value, so the swatches can never show one material's colours
@@ -162,6 +227,8 @@ export function UploadForm({
    */
   const accept = useCallback((picked: File | null) => {
     setPhase({ kind: "idle" });
+    setMeshVolume(null);
+    setMeasuring(false);
     if (!picked) return setFile(null);
 
     const ext = picked.name.slice(picked.name.lastIndexOf(".")).toLowerCase();
@@ -180,7 +247,8 @@ export function UploadForm({
       });
     }
     setFile(picked);
-  }, [maxBytes]);
+    void measure(picked);
+  }, [maxBytes, measure]);
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
@@ -244,6 +312,26 @@ export function UploadForm({
     setPhase({ kind: "uploading", percent: 0 });
     xhr.send(body);
   }
+
+  /*
+   * The estimate itself. Every input is either measured — the volume, read from
+   * the file in hand — or one of the shop's own numbers, and `estimatePrint`
+   * answers with null rather than a figure when there is nothing honest to say.
+   */
+  const rate = basis.materials[shownMaterial];
+  const estimate =
+    meshVolume != null && rate
+      ? estimatePrint({
+          volumeMm3: meshVolume,
+          densityGcm3: rate.densityGcm3,
+          infillPercent: basis.infillPercent,
+          flowMm3s: basis.flowMm3s,
+          dollarsPerKg: rate.dollarsPerKg,
+          dollarsPerHour: basis.dollarsPerHour,
+          markupPercent: basis.markupPercent,
+          minimumCharge: basis.minimumCharge,
+        })
+      : null;
 
   const busy = phase.kind === "uploading";
 
@@ -476,52 +564,72 @@ export function UploadForm({
         </div>
       </fieldset>
 
-      {/* ---- the tip jar ---- */}
+      {/* ---- what it will cost ---- */}
       {/*
-        A fieldset with a floated full-width legend broke the layout here: the
-        float took the whole row and squeezed the pills into a vertical stack.
-        A labelled radiogroup does the same job for assistive tech without
-        fighting the box model.
+        This panel stands where the tip jar used to. The requester sees a price
+        while they are still deciding, which is the number they actually want
+        before pressing send — and the tip list it replaced was never a form
+        the requester could get wrong, so nothing was lost but the question.
       */}
       <section
-        aria-labelledby="tip-heading"
+        aria-labelledby="estimate-heading"
         className="mt-[26.4px] rounded-panel border-[3px] border-ink bg-aqua-wash p-[22px] shadow-stamp"
       >
-        <h2 id="tip-heading" className="m-0 mb-[4px] font-display text-[22px] text-ink">
-          And what&rsquo;s in it for {owner}?
+        <h2 id="estimate-heading" className="m-0 mb-[4px] font-display text-[22px] text-ink">
+          What this will cost
         </h2>
-        <p className="m-0 mb-[8px] text-[14.5px] text-ink-2">
-          Optional. Nobody is counting. {owner} is counting a little.
-        </p>
-        {preferredLabels.length > 0 && (
-          <p className="m-0 mb-[15px] font-mono text-[12px] font-bold uppercase tracking-[0.04em] text-cherry-dk">
-            ★ {owner} currently prefers: {preferredLabels.join(", ")}
+
+        {!file && (
+          <p className="m-0 max-w-[62ch] text-[14.5px] leading-[1.5] text-ink-2">
+            Pick a file and it is priced from its own geometry — nothing has to
+            be sent to find that out.
           </p>
         )}
-        <div role="radiogroup" aria-labelledby="tip-heading" className="flex flex-wrap gap-[8.8px]">
-          {benefits.map((b) => {
-            const active = b.label === tip;
-            return (
-              <button
-                key={b.label}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => setTip(b.label)}
-                className={`stamp cursor-pointer rounded-chip border-[3px] border-ink px-[18px] py-[9px] text-[14px] font-bold transition-colors ${
-                  active ? "bg-cherry-dk text-cream" : "bg-porcelain text-ink hover:bg-sun"
-                }`}
-              >
-                {b.preferred && (
-                  <span aria-label="preferred" title="Preferred">
-                    ★{" "}
-                  </span>
-                )}
-                {b.label}
-              </button>
-            );
-          })}
-        </div>
+
+        {file && measuring && (
+          <p className="m-0 text-[14.5px] text-ink-2">Reading the mesh&hellip;</p>
+        )}
+
+        {file && !measuring && estimate && (
+          <>
+            <p className="m-0 mb-[6px] font-display text-[38px] leading-none text-ink">
+              {formatMoney(estimate.price, basis.currency)}
+            </p>
+            <p className="m-0 mb-[13.2px] max-w-[62ch] text-[15px] leading-[1.45] text-ink-2">
+              About <strong>{estimate.grams} g</strong> of {shownMaterial} —{" "}
+              {estimate.metres} m of filament — and roughly{" "}
+              <strong>{formatMinutes(estimate.minutes)}</strong> on the bed.
+              {estimate.minimumApplied && " The shop's minimum charge applies to a job this small."}
+            </p>
+            <p className="m-0 mb-[11px] font-mono text-[11px] uppercase tracking-[0.04em] text-ink-3">
+              Costed at {estimate.infillPercent}% infill ·{" "}
+              {formatRate(estimate.dollarsPerKg, basis.currency, "kg")} ·{" "}
+              {formatRate(estimate.dollarsPerHour, basis.currency, "h")} on the machine
+            </p>
+            <p className="m-0 max-w-[62ch] text-[13.5px] leading-[1.5] text-ink-3">
+              An estimate from the shape of the file, not a quote: supports,
+              layer height and the slicer&rsquo;s own choices all move it, and{" "}
+              {owner} confirms the real figure once it has been printed and
+              weighed.
+            </p>
+          </>
+        )}
+
+        {file && !measuring && !estimate && (
+          <p className="m-0 max-w-[62ch] text-[14.5px] leading-[1.5] text-ink-2">
+            {file.name.toLowerCase().endsWith(".3mf") ? (
+              <>
+                A 3MF is an archive, so it is unzipped and measured when it is
+                sent rather than here — there is no figure to show yet.
+              </>
+            ) : (
+              <>
+                No number for this one: its mesh is not a closed surface, so no
+                volume can be read from it. {owner} will price it by hand.
+              </>
+            )}
+          </p>
+        )}
       </section>
 
       {/* ---- note ---- */}

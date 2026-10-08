@@ -94,7 +94,18 @@ export default async function StoryPage({
 
             {/* Both measured from the file itself. Nothing inferred. */}
             <div className="mt-[13.2px] flex flex-wrap gap-[8px]">
-              {[story.dims ?? "dimensions unknown", formatBytes(story.fileSize)].map((v) => (
+              {[
+                story.dims ?? "dimensions unknown",
+                formatBytes(story.fileSize),
+                // The third measured fact, and the only one that has anything
+                // to do with filament: what the mesh encloses. Absent for a
+                // mesh whose surface is not closed, which is honest.
+                story.volumeMm3 != null
+                  ? `${(story.volumeMm3 / 1000).toFixed(1)} cm³ of mesh`
+                  : null,
+              ]
+                .filter((v): v is string => v !== null)
+                .map((v) => (
                 <span
                   key={v}
                   className="rounded-chip border-2 border-ink bg-porcelain px-[11px] py-[3px] font-mono text-[12px] font-bold text-ink"

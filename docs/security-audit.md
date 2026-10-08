@@ -570,9 +570,12 @@ Postgres data directory to back up that way; the database is the MySQL database 
   present, so uploads between 10 and 50 MB had been failing with a parse error
   dressed as a network fault. `verify:upload` now sends a 12 MB model on every
   run.
-- ~~Print-time estimates~~ — removed rather than kept. The app now shows only
-  what it measured. See the README for the reasoning and the path to a real
-  slicer-derived figure.
+- ~~Print-time estimates~~ — the bounding-box heuristic was removed rather than
+  kept, and nothing guessed is stored as a fact about a ticket. The app now
+  measures the volume the mesh encloses and shows an estimate built on it on
+  the upload form, with its assumptions named on the screen. See the
+  [architecture notes](architecture.md#why-print-time-is-estimated-not-stated)
+  for what separates the two, and the path to a slicer-derived figure.
 - **CSRF rests on Origin checking plus `SameSite=Lax`**, which is Better
   Auth's model and is sound for this threat profile. There are no
   per-form tokens; if the app ever needs to accept cross-site POSTs, that

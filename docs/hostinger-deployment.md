@@ -227,8 +227,9 @@ one) and fails naming the variable when a part is missing or a host will not par
 assemble `DATABASE_URL` yourself and export just that — the app uses whichever is set.
 
 Expect `14 migrations found` on the first run (the count as of this writing), each migration
-listed as it applies, and none pending after. The seed prints four lines: `Benefits ready: 5
-default tip(s) present.`, `Materials ready: 4 default material(s) present.`, `Colours ready: 5
+listed as it applies, and none pending after. The seed prints six lines: `Benefits ready: 5
+default tip(s) present.`, `Materials ready: 4 default material(s) present.`, `Densities ready: PLA
+1.24, PETG 1.27, TPU 1.21, Resin 1.1 g/cm³ (editable at /admin/settings).`, `Colours ready: 5
 swatch(es) per material, editable at /admin/settings.`, `Cost calculator rates ready (edit them at
 /admin/settings).`, and `No administrator is seeded — open /setup once to claim the printer.` A
 fresh clone that has never built may be told to run `npx prisma generate` before the seed; do.
@@ -236,8 +237,9 @@ fresh clone that has never built may be told to run `npx prisma generate` before
 Those are the same two commands the migrator's `CMD` runs, in the same order. `migrate deploy`
 applies the migrations in `prisma/migrations/` and records them in `_prisma_migrations`, so a second
 run is a no-op — which is why it is the subcommand to reach for and `migrate dev` is not. The seed
-is idempotent and non-destructive: it adds the default benefits, materials, each material's five
-starting colours and the cost rates, and never overwrites a row the owner has already edited.
+is idempotent and non-destructive: it adds the default benefits, materials, each material's
+density, its five starting colours and the cost rates, and never overwrites a row the owner has
+already edited.
 
 The catch is reaching the database from outside Hostinger. Business MySQL is normally closed to the
 internet until you allow your own IP in the database section of the dashboard; a connection that

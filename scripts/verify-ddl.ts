@@ -487,6 +487,73 @@ const CASES: Case[] = [
       return null;
     },
   },
+  {
+    // Nullable in the DDL on purpose: the table has rows, and MySQL refuses a
+    // new NOT NULL column without a default. So the shape to pin is the bare
+    // DOUBLE PRECISION — the number that fills it is checked in the case below.
+    name: "material.densityGcm3 is added as a nullable double",
+    check: () => {
+      const sql = addColumnSql("material", {
+        name: "densityGcm3",
+        type: "DOUBLE PRECISION",
+        required: false,
+      });
+      const want = "ALTER TABLE `material` ADD COLUMN `densityGcm3` DOUBLE PRECISION;";
+      return sql === want ? null : `got: ${sql}`;
+    },
+  },
+  {
+    // Two silent failures hide here: a column nothing adds, which makes every
+    // read of a density throw, and a backfill that overwrites the owner's own
+    // figure on the next deploy. Pinned against the reconciliation's source,
+    // like the palette and settings cases above.
+    name: "the reconciliation adds, sweeps and fills the material density",
+    check: () => {
+      const source = readFileSync(
+        new URL("./reconcile-hostinger-db.ts", import.meta.url),
+        "utf8",
+      );
+      if (!source.includes('ensureColumn("material", "densityGcm3", "DOUBLE PRECISION", false)')) {
+        return "the density column is no longer added by the reconciliation";
+      }
+      if (!/UPDATE material SET densityGcm3 = 1\.24 WHERE densityGcm3 IS NULL/.test(source)) {
+        return "rows that predate the column stay NULL, so a read meets no number";
+      }
+      if (!/where: \{ name: material, densityGcm3: 1\.24 \}/.test(source)) {
+        return "the backfill no longer checks for the default, so it would overwrite an edited density";
+      }
+      return source.includes("densityGcm3: density")
+        ? null
+        : "the known materials never get their real density";
+    },
+  },
+  {
+    name: "story.volumeMm3 is added as a nullable integer",
+    check: () => {
+      const sql = addColumnSql("story", {
+        name: "volumeMm3",
+        type: "INTEGER",
+        required: false,
+      });
+      const want = "ALTER TABLE `story` ADD COLUMN `volumeMm3` INTEGER;";
+      return sql === want ? null : `got: ${sql}`;
+    },
+  },
+  {
+    // An upload writes the volume it measured. A column nothing adds fails the
+    // whole insert of every story — the loudest bug this script exists to
+    // catch before a deploy does.
+    name: "the reconciliation adds the measured mesh volume",
+    check: () => {
+      const source = readFileSync(
+        new URL("./reconcile-hostinger-db.ts", import.meta.url),
+        "utf8",
+      );
+      return source.includes('ensureColumn("story", "volumeMm3", "INTEGER", false)')
+        ? null
+        : "the volume column is no longer added by the reconciliation";
+    },
+  },
 ];
 
 let failed = 0;

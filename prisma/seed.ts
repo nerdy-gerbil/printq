@@ -36,17 +36,29 @@ async function main() {
   }
   console.info(`Benefits ready: ${DEFAULT_BENEFITS.length} default tip(s) present.`);
 
-  // The default materials. Same shape as benefits above.
-  const DEFAULT_MATERIALS = ["PLA", "PETG", "TPU", "Resin"];
+  // The default materials, each with the filament density that turns a mesh
+  // volume into grams. Same shape as benefits above, and `update` is empty for
+  // the same reason: a re-run fills in what is missing and never overwrites a
+  // density the owner has since corrected against a real spool.
+  const DEFAULT_MATERIALS = [
+    { name: "PLA", densityGcm3: 1.24 },
+    { name: "PETG", densityGcm3: 1.27 },
+    { name: "TPU", densityGcm3: 1.21 },
+    { name: "Resin", densityGcm3: 1.1 },
+  ];
   for (let i = 0; i < DEFAULT_MATERIALS.length; i++) {
+    const material = DEFAULT_MATERIALS[i]!;
     await db.material.upsert({
-      where: { name: DEFAULT_MATERIALS[i]! },
+      where: { name: material.name },
       update: {},
-      create: { name: DEFAULT_MATERIALS[i]!, sortOrder: i + 1 },
+      create: { name: material.name, densityGcm3: material.densityGcm3, sortOrder: i + 1 },
     });
   }
   console.info(
     `Materials ready: ${DEFAULT_MATERIALS.length} default material(s) present.`,
+  );
+  console.info(
+    `Densities ready: ${DEFAULT_MATERIALS.map((m) => `${m.name} ${m.densityGcm3}`).join(", ")} g/cm³ (editable at /admin/settings).`,
   );
 
   // The built-in filament swatches, per material. Same idempotent shape as the
@@ -59,7 +71,7 @@ async function main() {
     { name: "Graphite", hex: "#1b2126" },
     { name: "Whatever's on", hex: "#b6bcc2" },
   ];
-  for (const material of DEFAULT_MATERIALS) {
+  for (const { name: material } of DEFAULT_MATERIALS) {
     for (let i = 0; i < DEFAULT_COLORS.length; i++) {
       const color = DEFAULT_COLORS[i]!;
       await db.materialColor.upsert({

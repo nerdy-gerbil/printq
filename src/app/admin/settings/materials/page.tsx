@@ -10,6 +10,7 @@ import {
   createMaterialAction,
   renameMaterialAction,
   setMaterialActiveAction,
+  setMaterialDensityAction,
   setMaterialRateAction,
 } from "./actions";
 
@@ -54,8 +55,10 @@ export default async function MaterialsPage({
         <p className="m-0 mb-[22px] max-w-[62ch] text-[15px] text-ink-2">
           The materials people can ask for, and what each costs you per
           kilogram — the price feeds the cost ledger on the team&rsquo;s
-          tickets. Retire one to take it off the upload form without touching
-          past requests made in it.
+          tickets. The density, beside it, is what turns the volume the app
+          measures from an uploaded mesh into grams, and so into the estimate a
+          requester sees before they send a file. Retire a material to take it
+          off the upload form without touching past requests made in it.
         </p>
 
         {error && (
@@ -140,6 +143,33 @@ export default async function MaterialsPage({
                   <button
                     type="submit"
                     className="cursor-pointer rounded-chip border-2 border-ink bg-porcelain px-[12px] py-[6px] font-mono text-[11px] font-bold uppercase text-ink hover:bg-sun"
+                  >
+                    Set
+                  </button>
+                </form>
+
+                {/* Filament density, g/cm³ — what turns a measured mesh
+                    volume into grams. Its own form because it answers a
+                    different question from the price: a wrong price costs
+                    money, a wrong density costs an estimate. */}
+                <form action={setMaterialDensityAction} className="flex items-center gap-[8px]">
+                  <input type="hidden" name="name" value={m.name} />
+                  <label className="flex items-center gap-[6px] font-mono text-[12px] font-bold text-ink-2">
+                    g/cm³
+                    <input
+                      name="densityGcm3"
+                      type="number"
+                      min="0.1"
+                      max="5"
+                      step="0.01"
+                      defaultValue={m.densityGcm3}
+                      aria-label={`Filament density for ${m.name}, in grams per cubic centimetre`}
+                      className="w-[86px] rounded-[8px] border-2 border-ink bg-cream-2 px-[9px] py-[7px] font-mono text-[14px] text-ink"
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    className="cursor-pointer rounded-chip border-2 border-ink bg-porcelain px-[12px] py-[6px] font-mono text-[11px] font-bold uppercase text-ink hover:bg-mint-wash"
                   >
                     Set
                   </button>

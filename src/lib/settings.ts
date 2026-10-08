@@ -51,6 +51,18 @@ export type AppSettings = {
   defaultMaterial: string;
   /** Soft cap on a model, in MB. The compiled 250 MB ceiling still applies. */
   maxUploadMb: number;
+  /**
+   * What the estimate assumes about how solid a part is. A printed part is
+   * mostly air inside and nothing in a mesh file says how much, so the owner
+   * states the assumption rather than the app inventing a different one per
+   * upload. Estimate only — a cost the team has recorded never reads this.
+   */
+  assumedInfillPercent: number;
+  /**
+   * Cubic millimetres of filament laid down per second, the one number that
+   * turns a volume into an estimated print time. Same rule: estimates only.
+   */
+  estimateFlowMm3s: number;
   /** How long an invitation link stays good. */
   inviteExpiryDays: number;
   /** Used in copy: "Invited by …", "…'s queue". */
@@ -73,6 +85,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   pausedMessage: "",
   defaultMaterial: "",
   maxUploadMb: MAX_UPLOAD_MB,
+  assumedInfillPercent: 20,
+  estimateFlowMm3s: 8,
   inviteExpiryDays: 7,
   teamName: "the print team",
 };
@@ -225,6 +239,37 @@ const CODECS: { [K in keyof AppSettings]: Codec<K> } = {
     },
     show: (value) => String(value),
     bounds: { min: 1, max: MAX_UPLOAD_MB, step: 1 },
+  },
+  assumedInfillPercent: {
+    section: "orders",
+    label: "Assumed infill",
+    help: "The assumption behind an estimated filament figure, because a printed part is mostly air inside. It moves estimates and nothing else — a cost the team has recorded is measured, and is not touched.",
+    kind: "field",
+    parse: (raw) => {
+      const value = numberFrom(raw, "infill");
+      if (!Number.isInteger(value)) throw new Error("give it whole percent.");
+      if (value < 5) throw new Error("5% is the floor — under that there is more air than part.");
+      if (value > 100) throw new Error("100% is a solid block, and there is nothing above it.");
+      return value;
+    },
+    show: (value) => String(value),
+    bounds: { min: 5, max: 100, step: 1 },
+  },
+  estimateFlowMm3s: {
+    section: "orders",
+    label: "Assumed print speed",
+    help: "Cubic millimetres of filament per second, which is what turns a volume into an estimated print time. Estimate only: a print time the team recorded is measured.",
+    kind: "field",
+    parse: (raw) => {
+      const value = numberFrom(raw, "print speed");
+      if (value < 1) throw new Error("at least 1 mm³/s, or every estimate would say forever.");
+      if (value > 100) throw new Error("100 mm³/s is past any desk printer — that looks like a typo.");
+      // Rounded to the field's own step, so what is stored is a value the
+      // form can show back without looking edited.
+      return Math.round(value * 2) / 2;
+    },
+    show: (value) => String(value),
+    bounds: { min: 1, max: 100, step: 0.5 },
   },
   inviteExpiryDays: {
     section: "people",

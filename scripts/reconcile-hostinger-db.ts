@@ -616,9 +616,14 @@ async function main() {
   await ensureColumn("story", "printMinutes", "INTEGER", false);
   await ensureColumn("story", "additionalColorNames", "JSON", false);
   await ensureColumn("story", "additionalColors", "JSON", false);
+  // The density a material's filament is weighed at, added nullable rather
+  // than NOT NULL: the table has rows in it, and MySQL will not take a new
+  // NOT NULL column without a default. The sweep below fills it in.
+  await ensureColumn("material", "densityGcm3", "DOUBLE PRECISION", false);
   await ensureColumn("story", "sourceUrl", "TEXT", false);
   await ensureColumn("story", "printSettings", "TEXT", false);
   await ensureColumn("story", "dims", "TEXT", false);
+  await ensureColumn("story", "volumeMm3", "INTEGER", false);
   await ensureColumn("story", "flagged", "BOOLEAN", false);
   await ensureColumn("story", "flagReason", "TEXT", false);
   await ensureColumn("story", "material", "TEXT", false);
@@ -821,6 +826,31 @@ async function main() {
     );
   } else {
     console.log("material_color already has rows");
+  }
+
+  // The density a material weighs at, for rows that predate the column.
+  //
+  // Two steps, and the second is the one that matters. Every existing row gets
+  // the column default first, so no read ever meets a NULL where a number
+  // belongs; then the materials whose real figure is known get theirs — but
+  // ONLY while the row still holds that default. The moment somebody types a
+  // number on the Materials tab, this stops touching it, which is what makes
+  // the fill safe to leave in the deploy path forever. PLA is deliberately not
+  // in the list: 1.24 g/cm³ is the column default, so it is already right.
+  await run(`UPDATE material SET densityGcm3 = 1.24 WHERE densityGcm3 IS NULL`);
+  const DENSITY_DEFAULTS: Record<string, number> = {
+    PETG: 1.27,
+    TPU: 1.21,
+    Resin: 1.1,
+  };
+  for (const [material, density] of Object.entries(DENSITY_DEFAULTS)) {
+    const filled = await client.material.updateMany({
+      where: { name: material, densityGcm3: 1.24 },
+      data: { densityGcm3: density },
+    });
+    if (filled.count > 0) {
+      console.log(`material density filled in: ${material} ${density} g/cm³`);
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -15,10 +15,25 @@ import { unzipSync } from "fflate";
 import {
   ACCEPTED_EXTENSIONS,
   MAX_INFLATED_BYTES,
-  MAX_TRIANGLES,
   MAX_UPLOAD_BYTES,
   formatBytes,
 } from "@/lib/upload-limits";
+// The box and the volume are scanned in `mesh.ts`, which has no `fflate` in it
+// and no `server-only` on it, so the upload form can measure a file in the
+// browser with the very same arithmetic this module validates with. Only the
+// 3MF archive handling — the part that needs unzipping — stays here.
+import {
+  enclosedVolume,
+  emptyBox,
+  expand,
+  isAsciiStl,
+  isBinaryStl,
+  scanAsciiStl,
+  scanBinaryStl,
+  tetrahedron,
+  type Box,
+  type MeshScan,
+} from "@/lib/mesh";
 
 /** Re-exported so existing callers keep one import to reach for. */
 export { ACCEPTED_EXTENSIONS, formatBytes };
@@ -51,6 +66,13 @@ export type Measured = {
   size: { x: number; y: number; z: number };
   /** "78 × 40 × 22 mm" */
   dims: string;
+  /**
+   * The volume the mesh encloses, in mm³ — measured, not guessed, and null
+   * when the surface cannot support the claim (see `mesh.ts`). This is what an
+   * estimate of filament and print time is built on, so a null here means the
+   * app offers no estimate rather than a wrong one.
+   */
+  volumeMm3: number | null;
 };
 
 export type Inspection =
@@ -66,32 +88,10 @@ const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]; // "PK\x03\x04"
 const startsWith = (b: Uint8Array, sig: number[]) =>
   sig.every((byte, i) => b[i] === byte);
 
-/**
- * A binary STL has no magic number, so it is identified structurally: an
- * 80-byte header, a uint32 triangle count, then exactly 50 bytes per
- * triangle. If the arithmetic lands on the file length, it is a binary STL
- * and nothing else plausibly is.
- *
- * This check has to come first, because binary STLs written by some tools
- * begin with the ASCII word "solid" in their header and would otherwise be
- * mistaken for the text format.
- */
-function isBinaryStl(bytes: Uint8Array): boolean {
-  if (bytes.length < 84) return false;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const count = view.getUint32(80, true);
-  if (count > MAX_TRIANGLES) return false;
-  return bytes.length === 84 + count * 50;
-}
-
-function isAsciiStl(bytes: Uint8Array): boolean {
-  const head = new TextDecoder("utf-8", { fatal: false })
-    .decode(bytes.subarray(0, 2048))
-    .trimStart()
-    .toLowerCase();
-  // Both markers required: "solid" alone is too weak a signal.
-  return head.startsWith("solid") && head.includes("facet normal");
-}
+// The two STL sniffers, and the STL parsers below, now live in `mesh.ts` —
+// imported above — because the upload form needs the same numbers before the
+// file has been sent. What is left here is what only the server can do: decide
+// whether the file is acceptable, and read the 3MF archive.
 
 export function extensionOf(filename: string): string {
   const dot = filename.lastIndexOf(".");
@@ -101,56 +101,6 @@ export function extensionOf(filename: string): string {
 // ---------------------------------------------------------------------------
 // Parsing
 // ---------------------------------------------------------------------------
-
-type Box = { min: [number, number, number]; max: [number, number, number] };
-
-const emptyBox = (): Box => ({
-  min: [Infinity, Infinity, Infinity],
-  max: [-Infinity, -Infinity, -Infinity],
-});
-
-function expand(box: Box, x: number, y: number, z: number) {
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-  const p = [x, y, z] as const;
-  for (let i = 0; i < 3; i++) {
-    if (p[i]! < box.min[i]!) box.min[i] = p[i]!;
-    if (p[i]! > box.max[i]!) box.max[i] = p[i]!;
-  }
-}
-
-function measureBinaryStl(bytes: Uint8Array): { box: Box; triangles: number } {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const triangles = view.getUint32(80, true);
-  const box = emptyBox();
-  let offset = 84;
-  for (let t = 0; t < triangles; t++) {
-    // Skip the 12-byte normal; only the three vertices bound the mesh.
-    for (let v = 0; v < 3; v++) {
-      const base = offset + 12 + v * 12;
-      expand(
-        box,
-        view.getFloat32(base, true),
-        view.getFloat32(base + 4, true),
-        view.getFloat32(base + 8, true),
-      );
-    }
-    offset += 50;
-  }
-  return { box, triangles };
-}
-
-function measureAsciiStl(bytes: Uint8Array): { box: Box; triangles: number } {
-  const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-  const box = emptyBox();
-  let vertices = 0;
-  const re = /vertex\s+(-?[\d.eE+-]+)\s+(-?[\d.eE+-]+)\s+(-?[\d.eE+-]+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    expand(box, parseFloat(m[1]!), parseFloat(m[2]!), parseFloat(m[3]!));
-    vertices++;
-  }
-  return { box, triangles: Math.floor(vertices / 3) };
-}
 
 /** 3MF declares its unit on the <model> element; everything becomes mm. */
 const UNIT_TO_MM: Record<string, number> = {
@@ -205,6 +155,14 @@ function matMul(a: Mat, b: Mat): Mat {
 type Obj3mf = {
   /** Flat x,y,z triples in the part's local space. */
   verts: number[];
+  /**
+   * Flat v1,v2,v3 index triples — a 3MF names its corners, it does not list
+   * them in order, so three consecutive entries of `verts` are not a triangle.
+   * The bounding box never noticed, because it is the union of every vertex
+   * either way; the enclosed volume does, and grouping them consecutively
+   * quietly produced a number for a surface that does not exist.
+   */
+  tris: number[];
   components: { objectid: string; path: string | null; tf: Mat }[];
 };
 
@@ -259,7 +217,19 @@ function parsePart(xml: string): Part3mf {
       components.push({ objectid, path, tf: parseTransform(attr(ct[0], "transform")) });
     }
 
-    objects.set(id, { verts, components });
+    const tris: number[] = [];
+    const triTag = /<triangle\b[^>]*\/?>/g;
+    let tt: RegExpExecArray | null;
+    while ((tt = triTag.exec(body)) !== null) {
+      // Matched separately, like the vertex attributes: the spec fixes no order.
+      const v1 = /\bv1\s*=\s*"(\d+)"/.exec(tt[0])?.[1];
+      const v2 = /\bv2\s*=\s*"(\d+)"/.exec(tt[0])?.[1];
+      const v3 = /\bv3\s*=\s*"(\d+)"/.exec(tt[0])?.[1];
+      if (v1 === undefined || v2 === undefined || v3 === undefined) continue;
+      tris.push(Number(v1), Number(v2), Number(v3));
+    }
+
+    objects.set(id, { verts, tris, components });
   }
 
   const buildItems: Part3mf["buildItems"] = [];
@@ -275,7 +245,7 @@ function parsePart(xml: string): Part3mf {
   return { unitScale, objects, buildItems };
 }
 
-function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
+function measure3mf(bytes: Uint8Array): MeshScan | null {
   let files: Record<string, Uint8Array>;
   try {
     let inflated = 0;
@@ -314,6 +284,7 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
 
   const box = emptyBox();
   let placed = 0;
+  let signed = 0;
 
   // Walk from each build item down through components, composing transforms and
   // expanding the box with every mesh vertex in its final placed position. A
@@ -326,15 +297,46 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
     if (!part || !obj) return;
 
     const s = part.unitScale;
-    for (let i = 0; i + 2 < obj.verts.length; i += 3) {
-      const x = obj.verts[i]!, y = obj.verts[i + 1]!, z = obj.verts[i + 2]!;
-      expand(
-        box,
+
+    /** Where a vertex index ends up: local space, transform tree, then unit. */
+    const place = (index: number): [number, number, number] | null => {
+      const base = index * 3;
+      const x = obj.verts[base];
+      const y = obj.verts[base + 1];
+      const z = obj.verts[base + 2];
+      if (x === undefined || y === undefined || z === undefined) return null;
+      return [
         (x * m[0]! + y * m[4]! + z * m[8]! + m[12]!) * s,
         (x * m[1]! + y * m[5]! + z * m[9]! + m[13]!) * s,
         (x * m[2]! + y * m[6]! + z * m[10]! + m[14]!) * s,
-      );
-      placed++;
+      ];
+    };
+
+    // Per triangle, through the indices the file actually declares.
+    for (let t = 0; t + 2 < obj.tris.length; t += 3) {
+      const a = place(obj.tris[t]!);
+      const b = place(obj.tris[t + 1]!);
+      const c = place(obj.tris[t + 2]!);
+      if (!a || !b || !c) continue;
+      for (const point of [a, b, c]) {
+        expand(box, point[0], point[1], point[2]);
+        placed++;
+      }
+      signed += tetrahedron(a, b, c);
+    }
+
+    // A mesh with vertices but no usable triangles: the box is all that can
+    // honestly be reported, since there is no surface to enclose a volume.
+    if (obj.tris.length === 0) {
+      for (let i = 0; i + 2 < obj.verts.length; i += 3) {
+        const point = [
+          (obj.verts[i]! * m[0]! + obj.verts[i + 1]! * m[4]! + obj.verts[i + 2]! * m[8]! + m[12]!) * s,
+          (obj.verts[i]! * m[1]! + obj.verts[i + 1]! * m[5]! + obj.verts[i + 2]! * m[9]! + m[13]!) * s,
+          (obj.verts[i]! * m[2]! + obj.verts[i + 1]! * m[6]! + obj.verts[i + 2]! * m[10]! + m[14]!) * s,
+        ] as [number, number, number];
+        expand(box, point[0], point[1], point[2]);
+        placed++;
+      }
     }
     for (const c of obj.components) {
       const childKey = c.path ? normalizePart(c.path) : partKey;
@@ -362,16 +364,38 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
   // looser box. Acceptance must never regress on account of the maths above.
   if (placed === 0) {
     for (const part of parts.values()) {
+      const s = part.unitScale;
       for (const obj of part.objects.values()) {
-        for (let i = 0; i + 2 < obj.verts.length; i += 3) {
-          expand(box, obj.verts[i]! * part.unitScale, obj.verts[i + 1]! * part.unitScale, obj.verts[i + 2]! * part.unitScale);
-          placed++;
+        // The same index-aware walk, with no transform to apply: this path
+        // exists for a file whose object graph could not be resolved at all.
+        for (let t = 0; t + 2 < obj.tris.length; t += 3) {
+          const corners: Array<[number, number, number]> = [];
+          for (const index of [obj.tris[t]!, obj.tris[t + 1]!, obj.tris[t + 2]!]) {
+            const base = index * 3;
+            const x = obj.verts[base];
+            const y = obj.verts[base + 1];
+            const z = obj.verts[base + 2];
+            if (x === undefined || y === undefined || z === undefined) break;
+            const point: [number, number, number] = [x * s, y * s, z * s];
+            expand(box, point[0], point[1], point[2]);
+            placed++;
+            corners.push(point);
+          }
+          if (corners.length === 3) {
+            signed += tetrahedron(corners[0]!, corners[1]!, corners[2]!);
+          }
+        }
+        if (obj.tris.length === 0) {
+          for (let i = 0; i + 2 < obj.verts.length; i += 3) {
+            expand(box, obj.verts[i]! * s, obj.verts[i + 1]! * s, obj.verts[i + 2]! * s);
+            placed++;
+          }
         }
       }
     }
   }
 
-  return placed > 0 ? { box, triangles } : null;
+  return placed > 0 ? { box, triangles, volumeMm3: enclosedVolume(signed, box) } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -379,21 +403,25 @@ function measure3mf(bytes: Uint8Array): { box: Box; triangles: number } | null {
 // ---------------------------------------------------------------------------
 
 /*
- * There is deliberately no print-time estimate here.
+ * This module measures. It does not estimate, and it still has no print-time
+ * heuristic of its own.
  *
- * A figure derived from the bounding box is a guess dressed as a measurement:
- * it cannot know infill, layer height, wall count or the printer's speeds,
- * and it is worst on exactly the models people care about — hollow parts and
- * lattices. The handoff's definition of done says nothing should claim to
- * know what the printer is doing, and a number someone might plan their
- * afternoon around is the kind of claim it is warning about.
+ * The rule that dropped the old one stands: a figure derived from the bounding
+ * box is a guess dressed as a measurement — it cannot know infill, layer
+ * height, wall count or the printer's speeds, and it is worst on exactly the
+ * models people care about. So what is reported here is geometry, and nothing
+ * else: the box, the triangle count, and the volume the surface encloses. A
+ * story in *Printing* still says `on the bed` and nothing about duration.
  *
- * So the app shows only what it actually measured: dimensions and file size.
+ * The estimate a requester sees while filling in the upload form is a separate
+ * thing, in `estimate.ts`: built on that measured volume, on assumptions the
+ * owner sets on the settings screen, and labelled as an estimate everywhere it
+ * is shown. Measured facts are what this app states flatly; a guess is always
+ * shown attached to what it assumes.
  *
- * To add a real one, shell out to `prusa-slicer --export-gcode` after upload
- * (in a background job — slicing takes seconds) and read
- * `; estimated printing time` out of the G-code. That number is worth
- * showing; this one was not.
+ * A figure with nothing assumed would come from slicing for real: shell out to
+ * `prusa-slicer --export-gcode` after upload (in a background job — slicing
+ * takes seconds) and read `; estimated printing time` out of the G-code.
  */
 
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -416,15 +444,15 @@ export function inspectModel(filename: string, bytes: Uint8Array): Inspection {
   }
 
   let format: ModelFormat;
-  let measured: { box: Box; triangles: number } | null;
+  let measured: MeshScan | null;
 
   try {
     if (isBinaryStl(bytes)) {
       format = "stl";
-      measured = measureBinaryStl(bytes);
+      measured = scanBinaryStl(bytes);
     } else if (isAsciiStl(bytes)) {
       format = "stl";
-      measured = measureAsciiStl(bytes);
+      measured = scanAsciiStl(bytes);
     } else if (startsWith(bytes, ZIP_MAGIC)) {
       format = "3mf";
       measured = measure3mf(bytes);
@@ -461,6 +489,7 @@ export function inspectModel(filename: string, bytes: Uint8Array): Inspection {
     triangles: measured.triangles,
     size,
     dims: `${Math.round(size.x)} × ${Math.round(size.y)} × ${Math.round(size.z)} mm`,
+    volumeMm3: measured.volumeMm3,
   };
 }
 
