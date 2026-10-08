@@ -26,6 +26,7 @@
     "db:down": "docker compose down",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "db:url": "tsx scripts/db-url.ts",
     "db:seed": "tsx prisma/seed.ts",
     "auth:generate": "better-auth generate --config src/lib/auth.ts",
     "verify:auth": "tsx scripts/verify-auth.ts",
@@ -44,6 +45,7 @@
     "verify:wishlist": "tsx scripts/verify-wishlist.ts",
     "verify:api": "tsx scripts/verify-api.ts",
     "verify:cost": "tsx scripts/verify-cost.ts",
+    "verify:dburl": "tsx scripts/verify-db-url.ts",
     "vendor:swagger": "tsx scripts/vendor-swagger.ts",
     "migrate:storage": "tsx scripts/export-storage.ts"
   },

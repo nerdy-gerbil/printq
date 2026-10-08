@@ -48,9 +48,12 @@ Hostinger's proxy must allow, the TLS and the Cloudflare Tunnel option — is th
 - The four MySQL connection variables. The Hostinger dashboard names the database
   `{account}_{name}`, not plain `printq`, and Hostinger will not let you rename it. The app no longer
   requires you to build a `DATABASE_URL` by hand for this path: it reads the four parts and assembles
-  `mysql://DB_USER:DB_PASSWORD@DB_HOST:3306/DB_NAME` itself, before PrismaClient is constructed. The
-  compose/docker path still uses `DATABASE_URL` directly — those variables are only for the Hostinger
-  Business MySQL path.
+  `mysql://DB_USER:DB_PASSWORD@DB_HOST:3306/DB_NAME` itself, before PrismaClient is constructed —
+  percent-encoding the credentials as it goes, so a `#`, `/`, `?` or space in `DB_PASSWORD` cannot
+  break the URL, and taking the port from `DB_HOST` when the host was pasted in with one. A URL that
+  would not parse fails at boot with an error naming the variable, rather than Prisma's `invalid port
+  number`. The compose/docker path still uses `DATABASE_URL` directly — those variables are only for
+  the Hostinger Business MySQL path.
 
   ```bash
   DB_HOST=                  # the MySQL host Hostinger gave you, e.g. mysqlXX.hostinger.com
@@ -202,20 +205,33 @@ than `tsx: command not found`.
 The compose path has a **migrator** one-shot that runs `prisma migrate deploy` and the seed before
 the app may start, so a deployment can never serve against an unmigrated schema. Hostinger runs the
 app and nothing else, so the schema is a one-time step you run yourself, from a checkout of this
-repository, against the Hostinger database:
+repository, against the Hostinger database. Check out the same commit you deployed — the
+migrations on disk have to match the code about to run against them — with `npm install` done
+(`prisma` and `tsx` are ordinary dependencies, so even a production-only install has them):
 
 ```bash
 export DB_HOST=mysqlXX.hostinger.com
 export DB_NAME=u678003261_printq
 export DB_USER=u678003261_printq
-export DB_PASSWORD=<the MySQL user's password>
+export DB_PASSWORD='<the MySQL user password>'    # single quotes keep # ! $ literal
+export DATABASE_URL="$(npx tsx scripts/db-url.ts)"
 npx prisma migrate deploy
 npx tsx prisma/seed.ts
 ```
 
-You can also assemble `DATABASE_URL` yourself and export that instead — the app will use whichever is
-set. Use the four variables when you want the path that does not care what Hostinger named the
-database.
+That `db-url.ts` line is not decoration: the Prisma CLI and the seed read **only** `DATABASE_URL`
+— the four variables are the app's own path and never reach either command, which fails with
+`Environment variable not found: DATABASE_URL` on its own. The script assembles the URL through the
+same code the app uses (credentials percent-encoded, the port taken from `DB_HOST` when it carries
+one) and fails naming the variable when a part is missing or a host will not parse. You can also
+assemble `DATABASE_URL` yourself and export just that — the app uses whichever is set.
+
+Expect `14 migrations found` on the first run (the count as of this writing), each migration
+listed as it applies, and none pending after. The seed prints four lines: `Benefits ready: 5
+default tip(s) present.`, `Materials ready: 4 default material(s) present.`, `Cost calculator
+rates ready (edit them at /admin/rates).`, and `No administrator is seeded — open /setup once
+to claim the printer.` A fresh clone that has never built may be told to run `npx prisma
+generate` before the seed; do.
 
 Those are the same two commands the migrator's `CMD` runs, in the same order. `migrate deploy`
 applies the migrations in `prisma/migrations/` and records them in `_prisma_migrations`, so a second
@@ -225,7 +241,9 @@ overwrites a row the owner has already edited.
 
 The catch is reaching the database from outside Hostinger. Business MySQL is normally closed to the
 internet until you allow your own IP in the database section of the dashboard; a connection that
-**times out** rather than being refused is that allowlist, not the password.
+**times out** rather than being refused is that allowlist, not the password. The opposite
+shape is `Authentication failed against database server`: the connection reached the database
+and the user or password was wrong — fix the value itself.
 
 Until the tables exist, every page answers with Prisma's P2021 — *the table does not exist in the
 current database* — and `/setup` is not excepted.

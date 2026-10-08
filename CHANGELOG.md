@@ -633,7 +633,16 @@ rename.
   Hostinger Business MySQL databases are named `{account}_{name}`, which does not fit the
   plain `database` part of a URL cleanly, so the app now reads the four MySQL connection
   parts and assembles `mysql://DB_USER:DB_PASSWORD@DB_HOST:3306/DB_NAME` itself before
-  `PrismaClient` is constructed - in both `src/lib/db.ts` and `scripts/_env.ts`. When
+  `PrismaClient` is constructed - in both `src/lib/db.ts` and `scripts/_env.ts`.
+  The assembly percent-encodes the credentials and takes the port from `DB_HOST` when the host
+  arrives with one, because a `#`, `/` or `?` in the password and a doubled `:3306` both reach
+  Prisma as the same misleading `invalid port number in database URL`; an unparsable URL now
+  fails at boot with an error naming the variable instead. `scripts/verify-db-url.ts` runs
+  those shapes against Prisma's own parser. The migration steps in
+  `docs/hostinger-deployment.md` now export `DATABASE_URL` through
+  `scripts/db-url.ts` as well - the Prisma CLI and the seed read only that
+  variable and fail with `Environment variable not found: DATABASE_URL` when
+  handed the four alone. When
   `DATABASE_URL` is already set, the old behaviour is preserved; when it is not, the four
   variables are used. `docs/hostinger-deployment.md` and `.env.docker.example` were updated
   to document this path instead of the full-URL-in-panel wording.
