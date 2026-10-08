@@ -143,18 +143,18 @@ function defaultValueSqlFor(model: string, field: string): string | null {
   return null;
 }
 
-async function columnPresent(
+function columnPresent(
   shape: TableShape | null,
   name: string,
-): Promise<boolean> {
+): boolean {
   return shape !== null && shape.columns.some((c) => c.name === name);
 }
 
-async function indexPresent(
+function indexPresent(
   shape: TableShape | null,
   columns: string[],
   unique: boolean,
-): Promise<boolean> {
+): boolean {
   if (shape === null) return false;
   return shape.indexes.some(
     (ix) =>
@@ -647,7 +647,7 @@ async function main() {
       // /setup — we do not invent a password here, so the account row is left
       // without a credential digest until /setup runs. Better Auth will still
       // accept a sign-in once /setup has populated the credential account.
-      const userId = await client.$transaction(async (tx) => {
+      const userId: string = await client.$transaction(async (tx) => {
         const user = await tx.user.create({
           data: {
             name: ADMIN_USER,
