@@ -8,18 +8,27 @@
  * exist first, and only adds what is missing — so a rerun is safe.
  *
  * What it does, in order:
- *  1. Connects with the same DATABASE_URL the app uses (DB_HOST/DB_NAME/DB_USER
+ *  1. Checks that the database environment is present before importing Prisma,
+ *     so a missing DB config fails the build with a readable message instead of
+ *     a raw PrismaClientInitializationError.
+ *  2. Connects with the same DATABASE_URL the app uses (DB_HOST/DB_NAME/DB_USER
  *     /DB_PASSWORD path or a direct DATABASE_URL).
- *  2. Creates any table the schema expects but the database does not have.
- *  3. Adds any column the schema expects but the table does not have.
- *  4. Backfills account.issuer from providerId, then makes it NOT NULL.
- *  5. Creates the unique indexes the schema expects.
- *  6. Seeds material_rate and machine_rate defaults if those tables were empty.
- *  7. Deletes user id cmuznegkk00017mcwlf6pas66 and lets the foreign-key
+ *  3. Creates any table the schema expects but the database does not have.
+ *  4. Adds any column the schema expects but the table does not have.
+ *  5. Backfills account.issuer from providerId, then makes it NOT NULL.
+ *  6. Creates the unique indexes the schema expects.
+ *  7. Seeds material_rate and machine_rate defaults if those tables were empty.
+ *  8. Deletes user id cmuznegkk00017mcwlf6pas66 and lets the foreign-key
  *     cascades clean up the linked account/session/passkey rows.
+ *  9. Recreates a placeholder admin when RECREATE_ADMIN is not explicitly false.
  *
  * The script is intentionally READ-ONLY in the inspection phase and only writes
  * after dumping the full plan. It never echoes the database password.
+ *
+ * Unattended / build form: the script reads DB_HOST/DB_NAME/DB_USER/DB_PASSWORD
+ * (or a direct DATABASE_URL). If the database environment is not present in this
+ * build, or cannot be assembled into a valid URL, it prints a clear message and
+ * exits non-zero.
  *
  * Run from the repo root:
  *   npx tsx scripts/reconcile-hostinger-db.ts
@@ -29,31 +38,101 @@
  * the delete.
  */
 
-import { DATABASE_URL } from "./_env";
+const REQUIRED_DB_VARS = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"] as const;
+
+function missingDbVars(): Array<typeof REQUIRED_DB_VARS[number]> {
+  return REQUIRED_DB_VARS.filter((k) => !process.env[k]?.trim());
+}
+
+const missing = missingDbVars();
+if (missing.length > 0) {
+  console.error(
+    `Database environment is not configured for this build.\n` +
+      `The DB reconciliation step needs all of: ${REQUIRED_DB_VARS.join(", ")}.\n` +
+      `Missing: ${missing.join(", ")}.\n` +
+      `Set them in the build environment (or set DATABASE_URL directly) and retry.\n` +
+      `If this is a deploy that should skip the DB step, set SKIP_DB_RECONCILE=true.\n`,
+  );
+  process.exit(1);
+}
+
 import { PrismaClient } from "@prisma/client";
+
+const client = new PrismaClient({
+  log: ["warn", "error"],
+});
+
+// Resolve DATABASE_URL using the same assembly ./_env would, but do it here so
+// a failure produces a readable build-failure message rather than a raw Prisma
+// error. If it can't be assembled, this process has already exited above or will
+// exit below.
+function buildDatabaseUrl(): string {
+  const supplied = process.env.DATABASE_URL?.trim();
+  if (supplied) {
+    try {
+      new URL(supplied);
+      return supplied;
+    } catch {
+      throw new Error(
+        `DATABASE_URL is not a valid URL. If its password contains # / ? % @ : or spaces, ` +
+          `percent-encode them (each character becomes %xx), or unset it and use ` +
+          `DB_HOST, DB_NAME, DB_USER and DB_PASSWORD instead.`,
+      );
+    }
+  }
+
+  const host = process.env.DB_HOST?.trim();
+  const name = process.env.DB_NAME?.trim();
+  const user = process.env.DB_USER?.trim();
+  const pass = process.env.DB_PASSWORD?.trim();
+  if (!host || !name || !user || !pass) {
+    const missing = REQUIRED_DB_VARS.filter((k) => !process.env[k]?.trim());
+    throw new Error(
+      `DATABASE_URL is not set, and the Hostinger MySQL path is incomplete.\n` +
+        `Set DATABASE_URL, or set all of: ${missing.join(", ")}.`,
+    );
+  }
+
+  const withPort = /^(.+):(\d{1,5})$/.exec(host);
+  const hostname = withPort?.[1] ?? host;
+  const port = withPort?.[2] ?? "3306";
+
+  const url =
+    `mysql://${encodeURIComponent(user)}:${encodeURIComponent(pass)}` +
+    `@${hostname}:${port}/${encodeURIComponent(name)}`;
+
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    throw new Error(
+      `DB_HOST ("${hostname}") is not a hostname Prisma can parse. ` +
+        `Set it to the MySQL host alone, e.g. mysqlXX.hostinger.com, with or without :port.`,
+    );
+  }
+}
+
+const resolvedDatabaseUrl = (() => {
+  try {
+    return buildDatabaseUrl();
+  } catch (error) {
+    console.error(
+      `Database URL could not be assembled from the build environment.\n` +
+        `The DB reconciliation step needs either DATABASE_URL, or all of: ` +
+        `${REQUIRED_DB_VARS.join(", ")}.\n` +
+        `Detail: ${(error as Error).message}`,
+    );
+    process.exit(1);
+  }
+})();
+
+process.env.DATABASE_URL = resolvedDatabaseUrl;
 
 const DELETE_ADMIN_ID = "cmuznegkk00017mcwlf6pas66";
 
 const ADMIN_USER = process.env.ADMIN_USER?.trim() ?? "GeekyGerbil";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase() ?? "dav.martinj@gmail.com";
 const RECREATE_ADMIN = process.env.RECREATE_ADMIN !== "false";
-
-const client = new PrismaClient({
-  log: ["warn", "error"],
-});
-
-let released = false;
-async function release() {
-  if (!released) {
-    released = true;
-    await client.$disconnect();
-  }
-}
-process.on("exit", release);
-process.on("SIGINT", () => {
-  release();
-  process.exit(0);
-});
 
 type ColumnShape = {
   name: string;
@@ -243,7 +322,7 @@ async function main() {
   console.log(`tables present: ${present.size} — ${[...present].join(", ")}`);
 
   // ---------------------------------------------------------------------------
-  // 1. Tables that must exist
+  // 3. Tables that must exist
   // ---------------------------------------------------------------------------
   await ensureTable("user", "user", [
     { name: "id", type: "TEXT", required: true },
@@ -447,7 +526,7 @@ async function main() {
   ]);
 
   // ---------------------------------------------------------------------------
-  // 2. Columns the table exists for but may be missing
+  // 4. Columns the table exists for but may be missing
   // ---------------------------------------------------------------------------
   await ensureColumn("user", "username", "TEXT", false);
   await ensureColumn("user", "displayUsername", "TEXT", false);
@@ -527,7 +606,7 @@ async function main() {
   await ensureColumn("session", "impersonatedBy", "TEXT", false);
 
   // ---------------------------------------------------------------------------
-  // 3. Backfill account.issuer
+  // 5. Backfill account.issuer
   // ---------------------------------------------------------------------------
   const accountShape = await tableShape("account");
   if (accountShape !== null && !accountShape.columns.some((c) => c.name === "issuer")) {
@@ -556,7 +635,7 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. Indexes
+  // 6. Indexes
   // ---------------------------------------------------------------------------
   await ensureIndex("user", ["email"], true, "user_email_key");
   await ensureIndex("user", ["role"], false, "user_role_idx");
@@ -583,7 +662,7 @@ async function main() {
   await ensureIndex("featureRequest", ["status"], false, "featureRequest_status_idx");
 
   // ---------------------------------------------------------------------------
-  // 5. Seed material_rate / machine_rate if those tables were empty
+  // 7. Seed material_rate / machine_rate if those tables were empty
   // ---------------------------------------------------------------------------
   const rateCount = await client.$queryRaw<Array<{ n: number }>>`
     SELECT COUNT(*) AS n FROM material_rate
@@ -617,7 +696,7 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Drop the broken admin user
+  // 8. Drop the broken admin user
   // ---------------------------------------------------------------------------
   const admin = await client.user.findUnique({
     where: { id: DELETE_ADMIN_ID },
@@ -634,7 +713,7 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
-  // 7. Recreate the admin if we just deleted it and RECREATE_ADMIN is on
+  // 9. Recreate the admin if we just deleted it and RECREATE_ADMIN is on
   // ---------------------------------------------------------------------------
   if (RECREATE_ADMIN) {
     const existingAdmin = await client.user.findFirst({

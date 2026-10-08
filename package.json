@@ -20,6 +20,7 @@
     "prebuild": "node scripts/check-build-deps.mjs && npm run vendor:swagger",
     "predeploy:db:reconcile": "tsx scripts/reconcile-hostinger-db.ts",
     "build": "npm run predeploy:db:reconcile && prisma generate && next build",
+    "db:url": "tsx scripts/db-url.ts",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
