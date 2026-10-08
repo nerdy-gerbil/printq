@@ -27,6 +27,11 @@ import {
   columnDefinition,
   modifyColumnSql,
 } from "./lib/ddl";
+import {
+  indexesFromStatisticRows,
+  indexPresent,
+  type StatisticRow,
+} from "./lib/schema-shape";
 
 /** null = pass, otherwise why it failed. */
 type Case = { name: string; check: () => string | null };
@@ -194,6 +199,77 @@ const CASES: Case[] = [
       } catch (error) {
         return `guard rejected a correct statement: ${(error as Error).message}`;
       }
+    },
+  },
+  // ---------------------------------------------------------------------------
+  // Reading the live schema back. The second failure on this host: NON_UNIQUE
+  // is `bigint(1)` on MariaDB 11.8, PRISMA hands a BIGINT back as a BigInt, and
+  // comparing it to the number 0 made every unique index look missing.
+  // ---------------------------------------------------------------------------
+  {
+    name: "NON_UNIQUE arriving as a BigInt (0n) still reads as unique",
+    check: () => {
+      const rows: StatisticRow[] = [
+        { INDEX_NAME: "user_email_key", COLUMN_NAME: "email", NON_UNIQUE: 0n },
+        { INDEX_NAME: "user_role_idx", COLUMN_NAME: "role", NON_UNIQUE: 1n },
+      ];
+      const indexes = indexesFromStatisticRows(rows);
+      const email = indexes.find((ix) => ix.name === "user_email_key");
+      const role = indexes.find((ix) => ix.name === "user_role_idx");
+      if (email?.unique !== true) return `user_email_key read as unique=${String(email?.unique)}`;
+      if (role?.unique !== false) return `user_role_idx read as unique=${String(role?.unique)}`;
+      if (!indexPresent(indexes, ["email"], true)) return "the unique index was judged missing";
+      return null;
+    },
+  },
+  {
+    // Without this, a fixture that cannot fail would look like a passing test.
+    name: "control: the comparison that caused it really was broken",
+    check: () => {
+      const oldComparison = (0n as unknown) === (0 as unknown);
+      return oldComparison === false
+        ? null
+        : "0n === 0 came out true, so this fixture cannot demonstrate the bug";
+    },
+  },
+  {
+    name: "NON_UNIQUE arriving as the string \"0\" or the number 0 also reads as unique",
+    check: () => {
+      for (const value of ["0", 0, BigInt(0)] as Array<number | bigint | string>) {
+        const indexes = indexesFromStatisticRows([
+          { INDEX_NAME: "k", COLUMN_NAME: "email", NON_UNIQUE: value },
+        ]);
+        if (indexes[0]?.unique !== true) return `NON_UNIQUE=${String(value)} read as non-unique`;
+      }
+      return null;
+    },
+  },
+  {
+    name: "a composite index collapses to one shape in SEQ order, and matches by shape not order",
+    check: () => {
+      const indexes = indexesFromStatisticRows([
+        { INDEX_NAME: "notification_recipientId_read_idx", COLUMN_NAME: "recipientId", NON_UNIQUE: 1n },
+        { INDEX_NAME: "notification_recipientId_read_idx", COLUMN_NAME: "read", NON_UNIQUE: 1n },
+      ]);
+      if (indexes.length !== 1) return `${indexes.length} shapes from one two-column index`;
+      if (indexes[0].columns.join(",") !== "recipientId,read") {
+        return `columns=${indexes[0].columns.join(",")}`;
+      }
+      if (!indexPresent(indexes, ["read", "recipientId"], false)) return "not matched when reversed";
+      if (indexPresent(indexes, ["recipientId", "read"], true)) return "matched as unique when it is not";
+      if (indexPresent(indexes, ["recipientId"], false)) return "matched a different column set";
+      return null;
+    },
+  },
+  {
+    name: "index names are reported, so a name clash can be recognised instead of crashed into",
+    check: () => {
+      const indexes = indexesFromStatisticRows([
+        { INDEX_NAME: "user_email_key", COLUMN_NAME: "email", NON_UNIQUE: 1n },
+      ]);
+      return indexes[0]?.name === "user_email_key"
+        ? null
+        : `name came back as ${String(indexes[0]?.name)}`;
     },
   },
   {

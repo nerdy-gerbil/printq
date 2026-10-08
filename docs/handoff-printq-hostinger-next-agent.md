@@ -1,9 +1,13 @@
 # Handoff: PrintQ / Hostinger deploy — the `TEXTNOT` build failure, resolved
 
-**Status: root cause found, fixed, and the fix's SQL verified against the real database.** The
-reconciliation has not yet been run *by the fixed code* against the live schema — see
-*What remains* — but the statements it will run were executed against the real server (MariaDB
-11.8.9), and the live schema was inspected directly, so what the next deploy will do is known.
+**Status: the fix is pushed and running on the host, and it has already repaired the live database.**
+The first deploy after it got past the failure it was written for — `ALTER TABLE notification ADD
+COLUMN text TEXT NOT NULL;` ran, and `column notification.text: added` is in the build log — and then
+hit a *second* bug one step later, in index detection, which is fixed in the following commit (see
+*Second failure: reading NON_UNIQUE* below).
+
+Do not treat "it got further" as "it is done": as of the last build the reconciliation had not yet
+reached `prisma generate && next build`.
 
 ## The root cause, in one line
 
@@ -49,13 +53,40 @@ ERROR: Failed to build the application
 Line 535 in that revision is `await ensureColumn("notification", "text", "TEXT", true)` — a required
 `TEXT` column, on the first ADD COLUMN the reconciliation reaches. It is the bug, in the act.
 
+## Second failure: reading `NON_UNIQUE` (§ fixed in `scripts/lib/schema-shape.ts`)
+
+With `TEXTNOT` gone, the build failed one step later, on the first index check:
+
+```
+  CREATE UNIQUE INDEX `user_email_key` ON `user` (`email`);
+Raw query failed. Code: `1061`. Message: `Duplicate key name 'user_email_key'`
+    at async run (.../scripts/reconcile-hostinger-db.ts:189:3)
+    at async ensureIndex (.../scripts/reconcile-hostinger-db.ts:344:3)
+```
+
+That index exists, and it is unique — so the *detection* was wrong, not the DDL. The cause is a type:
+`INFORMATION_SCHEMA.STATISTICS.NON_UNIQUE` is declared **`bigint(1)`** on MariaDB 11.8, Prisma's
+`$queryRaw` hands a BIGINT back as a **`BigInt`**, and the script compared it to the number 0:
+`0n === 0` is `false`. Every index was therefore recorded as non-unique, every *unique* index was
+judged missing, and `CREATE UNIQUE INDEX` was issued for one that already existed.
+
+The fix coerces (`Number(row.NON_UNIQUE) === 0`) in a pure helper, `indexesFromStatisticRows`, with
+`verify-ddl.ts` pinning a `0n` row and a control proving the old comparison really failed. `ensureIndex`
+also now tolerates a **name clash with a different shape**: it prints the difference and carries on
+instead of failing the whole build on `Duplicate key name`, because this database was hand-built and
+an index someone else created is theirs to review — nothing is dropped or altered.
+
+The `STATISTICS` query also gained `ORDER BY INDEX_NAME, SEQ_IN_INDEX`, so a composite index's columns
+come back in the index's own order rather than whatever the server felt like.
+
 ## What changed in this workspace
 
 | File | Change |
 | --- | --- |
+| `scripts/lib/schema-shape.ts` | **New.** Reading the live schema back out of `INFORMATION_SCHEMA`: the `NON_UNIQUE` coercion and the index-shape helpers, pure so they can be pinned without a database. |
 | `scripts/lib/ddl.ts` | **New.** Every statement is assembled here, each clause joined with exactly one space. `assertNoGluedKeyword` throws on the glued shape (`TEXTNOT`, `INTEGERDEFAULT`, `${a}${b}`) so a future edit cannot reintroduce it. Pure — no database, no credentials. |
 | `scripts/reconcile-hostinger-db.ts` | Uses those builders for `CREATE TABLE` / `ADD COLUMN` / `MODIFY` / `CREATE INDEX`; prints every statement before it runs (DDL only — no rows, no credentials), so a build log now names its own failure; `SKIP_DB_RECONCILE=true` actually skips the step (the script's error text had been promising it with nothing behind it); `DRY_RUN=true` or `--dry-run` runs the whole inspection and prints the whole plan without writing anything. |
-| `scripts/verify-ddl.ts` | **New.** 12 cases, no database: the statements that broke, the type × nullability × default matrix against an independently built expectation, two controls on the guard, and a pin on the real script (no `TEXTNOT`, no DDL built in its own templates). |
+| `scripts/verify-ddl.ts` | **New.** 17 cases, no database: the statements that broke, the type × nullability × default matrix against an independently built expectation, controls on the guard, the `NON_UNIQUE` shapes (BigInt, number, string) with a control for the comparison that failed, composite-index collapse, and a pin on the real script (no `TEXTNOT`, no DDL built in its own templates). |
 | `package.json` | `npm run verify:ddl`. |
 | `.github/workflows/ci.yml` | `verify:ddl` runs in the `guard` job. It would have failed on `3ff9f62`. |
 
@@ -86,13 +117,17 @@ table was touched:
   - `notification` has 0 rows, so the `ADD COLUMN ... NOT NULL` cannot fail on existing data.
 - The live app answers `https://printq.hivecodelabs.com/api/health` with `200 {"ok":true}`.
 
-So the next deploy's reconciliation should do one thing — add `notification.text` — and print it.
+That prediction was right, and the first pushed build confirmed it: the reconciliation added
+`notification.text` for real, and then failed in index detection (above). After that fix, every one of
+the ~23 indexes the reconciliation asks for was verified present with the right columns *and* the
+right uniqueness, so the index section should report `already present` throughout and the build should
+reach `prisma generate && next build`.
 
 ## What remains
 
-1. **Push and watch the build.** The reconciliation now prints each statement, so the log will show
-   the one `ALTER TABLE notification ADD COLUMN text TEXT NOT NULL;` and then `next build` should
-   proceed. Nothing has been committed or pushed from this workspace.
+1. **Watch the next build.** Everything the reconciliation asks for is now either present or fixed;
+   if it succeeds, the remaining risk moves to `next build` itself (which has never run on this host
+   against a MySQL schema — `prisma generate` and the Next.js compile are next in line).
 2. **Not verified: the fixed script executed end-to-end against the live database.** Prisma's query
    engine cannot start from an interactive SSH session on this host — `$queryRaw` triggers a Rust
    panic, `PANIC: timer has gone away`, on the very first query, with the engine loading fine. The

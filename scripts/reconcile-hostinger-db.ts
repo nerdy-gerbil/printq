@@ -88,6 +88,11 @@ import {
   modifyColumnSql,
   type ColumnSpec,
 } from "./lib/ddl";
+import {
+  indexesFromStatisticRows,
+  indexPresent,
+  type IndexShape,
+} from "./lib/schema-shape";
 
 const client = new PrismaClient({
   log: ["warn", "error"],
@@ -175,7 +180,7 @@ type ColumnShape = {
 type TableShape = {
   name: string;
   columns: ColumnShape[];
-  indexes: Array<{ name: string; columns: string[]; unique: boolean }>;
+  indexes: IndexShape[];
 };
 
 /**
@@ -199,20 +204,17 @@ async function tableShape(name: string): Promise<TableShape | null> {
    FROM INFORMATION_SCHEMA.COLUMNS
    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ${name}`;
 
+  // NON_UNIQUE is `bigint(1)` on a current MariaDB and Prisma hands a BIGINT
+  // back as a BigInt; ./lib/schema-shape coerces it, because comparing it to the
+  // number 0 made every unique index look missing.
   const indexes = await client.$queryRaw<Array<{
     INDEX_NAME: string;
     COLUMN_NAME: string;
-    NON_UNIQUE: number;
+    NON_UNIQUE: number | bigint | string;
   }>>`SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE
    FROM INFORMATION_SCHEMA.STATISTICS
-   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ${name} AND INDEX_NAME != "PRIMARY"`;
-
-  const byIndex = new Map<string, { columns: string[]; unique: boolean }>();
-  for (const row of indexes) {
-    const entry = byIndex.get(row.INDEX_NAME) ?? { columns: [], unique: row.NON_UNIQUE === 0 };
-    entry.columns.push(row.COLUMN_NAME);
-    byIndex.set(row.INDEX_NAME, entry);
-  }
+   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ${name} AND INDEX_NAME != "PRIMARY"
+   ORDER BY INDEX_NAME, SEQ_IN_INDEX`;
 
   if (rows.length === 0) return null;
 
@@ -224,11 +226,7 @@ async function tableShape(name: string): Promise<TableShape | null> {
       nullable: r.IS_NULLABLE === "YES",
       defaultValue: r.COLUMN_DEFAULT,
     })),
-    indexes: [...byIndex.values()].map(({ columns, unique }) => ({
-      name: columns.join("_"),
-      columns,
-      unique,
-    })),
+    indexes: indexesFromStatisticRows(indexes),
   };
 }
 
@@ -269,20 +267,6 @@ function columnPresent(
   name: string,
 ): boolean {
   return shape !== null && shape.columns.some((c) => c.name === name);
-}
-
-function indexPresent(
-  shape: TableShape | null,
-  columns: string[],
-  unique: boolean,
-): boolean {
-  if (shape === null) return false;
-  return shape.indexes.some(
-    (ix) =>
-      ix.unique === unique &&
-      ix.columns.length === columns.length &&
-      ix.columns.every((c) => columns.includes(c)),
-  );
 }
 
 async function ensureTable(model: string, table: string, fields: Array<{
@@ -337,10 +321,27 @@ async function ensureIndex(
   name: string,
 ) {
   const shape = await tableShape(table);
-  if (indexPresent(shape, columns, unique)) {
+  const indexes = shape?.indexes ?? [];
+  if (indexPresent(indexes, columns, unique)) {
     console.log(`index ${table}.${name}: already present`);
     return;
   }
+
+  // The name is taken but the definition is not what the schema asks for: this
+  // is a hand-built database, so say so and carry on rather than dying on
+  // `Duplicate key name` and failing the whole build. Nothing is dropped or
+  // altered here — an index someone else created is theirs to review.
+  const byName = indexes.find((ix) => ix.name === name);
+  if (byName !== undefined) {
+    console.log(
+      `index ${table}.${name}: NOT created — an index with that name already exists ` +
+        `(${byName.unique ? "unique" : "non-unique"} on ${byName.columns.join(", ")}), ` +
+        `but the schema asks for ${unique ? "unique" : "non-unique"} on ${columns.join(", ")}. ` +
+        `Review it by hand; the build continues.`,
+    );
+    return;
+  }
+
   await run(createIndexSql(table, columns, unique, name));
   console.log(`index ${table}.${name}: created`);
 }
