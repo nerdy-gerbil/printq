@@ -84,6 +84,20 @@ export async function completeSetup(
   const name = parsed.data.name;
   const email = parsed.data.email.trim().toLowerCase();
 
+  // The two username columns, written the way every other path writes them
+  // (the invite action lets Better Auth's plugin do it, set-password and the
+  // seed's link do it by hand, src/lib/auth-rules.ts documents the rule):
+  // `username` is folded to lower case because that is the value the unique
+  // index compares and the value `signIn.username` looks up, while
+  // `displayUsername` keeps what was typed so the profile can show it back.
+  //
+  // Leaving these out is not a cosmetic loss. The row exists and the credential
+  // account holds a perfectly good digest, but there is no username for the
+  // plugin to find, so sign-in answers "User not found" and the only account on
+  // a fresh deployment cannot get in.
+  const username = parsed.data.username.toLowerCase();
+  const displayUsername = parsed.data.username;
+
   // The HIBP breach check (haveIBeenPwned plugin) is not on this path, so the
   // same rule is applied here: a credential refuses to be a known-breach
   // password. K-anonymity — five characters of a SHA-1 prefix leave the box.
@@ -129,6 +143,8 @@ export async function completeSetup(
           email,
           emailVerified: true,
           initials: initialsFor(name),
+          username,
+          displayUsername,
           role: "admin",
           invitedById: null,
         },
