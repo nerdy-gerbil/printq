@@ -52,6 +52,13 @@ jobs:
         run: npx prisma generate
       - name: Typecheck
         run: npx tsc --noEmit
+      # The MySQL DDL the Hostinger reconciliation generates exists only as a
+      # string at build time, and the build that failed on Hostinger died with
+      # one line of MySQL's opinion about it. This asserts the statements
+      # without a database, so the shape is checked here rather than on the
+      # host after a deploy.
+      - name: Reconciliation DDL
+        run: npm run verify:ddl
       # Cross-checks every tracked file against known credential shapes. In CI
       # there are no local .env files, so the value-matching pass has nothing
       # to compare against and only the pattern pass runs — which is exactly

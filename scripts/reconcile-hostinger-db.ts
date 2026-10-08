@@ -25,6 +25,18 @@
  * The script is intentionally READ-ONLY in the inspection phase and only writes
  * after dumping the full plan. It never echoes the database password.
  *
+ * Every statement it runs is printed first (DDL only — no rows, no credentials),
+ * because the Hostinger build log is the only view anyone gets of this step. The
+ * runtime error that first failed this build read `Unknown data type: 'TEXTNOT'`
+ * and nothing else; with the statements printed, the next failure names itself.
+ *
+ * Set SKIP_DB_RECONCILE=true to skip the whole step — the escape hatch for a
+ * host that should build without reaching the database at all.
+ *
+ * Set DRY_RUN=true (or pass --dry-run) to run the inspection and print the
+ * whole plan without executing any of it. The plan is the only thing this
+ * script knows that the schema files do not, so being able to read it before
+ * it runs — against a live database, from anywhere — is worth the flag.
  * Unattended / build form: the script reads DB_HOST/DB_NAME/DB_USER/DB_PASSWORD
  * (or a direct DATABASE_URL). If the database environment is not present in this
  * build, or cannot be assembled into a valid URL, it prints a clear message and
@@ -44,6 +56,17 @@ function missingDbVars(): Array<typeof REQUIRED_DB_VARS[number]> {
   return REQUIRED_DB_VARS.filter((k) => !process.env[k]?.trim());
 }
 
+const DRY_RUN =
+  process.env.DRY_RUN === "true" || process.argv.includes("--dry-run");
+
+if (process.env.SKIP_DB_RECONCILE === "true") {
+  console.log(
+    "SKIP_DB_RECONCILE=true — skipping the database reconciliation step. " +
+      "The app will start against whatever schema the database already has.",
+  );
+  process.exit(0);
+}
+
 const missing = missingDbVars();
 if (missing.length > 0) {
   console.error(
@@ -57,6 +80,14 @@ if (missing.length > 0) {
 }
 
 import { PrismaClient } from "@prisma/client";
+
+import {
+  addColumnSql,
+  createIndexSql,
+  createTableSql,
+  modifyColumnSql,
+  type ColumnSpec,
+} from "./lib/ddl";
 
 const client = new PrismaClient({
   log: ["warn", "error"],
@@ -146,6 +177,17 @@ type TableShape = {
   columns: ColumnShape[];
   indexes: Array<{ name: string; columns: string[]; unique: boolean }>;
 };
+
+/**
+ * Print a statement, then run it. The print is the point: DDL carries no rows
+ * and no credentials, and a build log that shows the exact SQL turns a mystery
+ * MySQL error into a named statement.
+ */
+async function run(sql: string): Promise<void> {
+  console.log(`  ${DRY_RUN ? "[dry-run] " : ""}${sql.replace(/\s+/g, " ")}`);
+  if (DRY_RUN) return;
+  await client.$executeRawUnsafe(sql);
+}
 
 async function tableShape(name: string): Promise<TableShape | null> {
   const rows = await client.$queryRaw<Array<{
@@ -254,17 +296,13 @@ async function ensureTable(model: string, table: string, fields: Array<{
     return;
   }
 
-  const lines = [`CREATE TABLE \`${table}\` (`];
-  const body: string[] = [];
-  for (const field of fields) {
-    const nullable = field.required ? "NOT NULL" : "";
-    const def = defaultValueSqlFor(model, field.name);
-    const defaultSql = def !== null ? ` DEFAULT ${def}` : "";
-    body.push(`  \`${field.name}\` ${field.type}${nullable}${defaultSql}`);
-  }
-  lines.push(body.join(",\n"));
-  lines.push("\n)");
-  await client.$executeRawUnsafe(lines.join("\n") + ";");
+  const columns: ColumnSpec[] = fields.map((field) => ({
+    name: field.name,
+    type: field.type,
+    required: field.required,
+    default: defaultValueSqlFor(model, field.name),
+  }));
+  await run(createTableSql(table, columns));
   console.log(`table ${table}: created`);
 }
 
@@ -282,12 +320,13 @@ async function ensureColumn(
     return;
   }
 
-  const nullable = required ? "NOT NULL" : "";
-  const def = defaultValueSqlFor(table, field);
-  const defaultSql = def !== null ? ` DEFAULT ${def}` : "";
-  await client.$executeRawUnsafe(
-    `ALTER TABLE \`${table}\` ADD COLUMN \`${field}\` ${type}${nullable}${defaultSql};`,
-  );
+  const column: ColumnSpec = {
+    name: field,
+    type,
+    required,
+    default: defaultValueSqlFor(table, field),
+  };
+  await run(addColumnSql(table, column));
   console.log(`column ${table}.${field}: added`);
 }
 
@@ -302,11 +341,7 @@ async function ensureIndex(
     console.log(`index ${table}.${name}: already present`);
     return;
   }
-  const quoted = columns.map((c) => `\`${c}\``).join(", ");
-  const sql = unique
-    ? `CREATE UNIQUE INDEX \`${name}\` ON \`${table}\` (${quoted})`
-    : `CREATE INDEX \`${name}\` ON \`${table}\` (${quoted})`;
-  await client.$executeRawUnsafe(sql + ";");
+  await run(createIndexSql(table, columns, unique, name));
   console.log(`index ${table}.${name}: created`);
 }
 
@@ -617,7 +652,7 @@ async function main() {
     `;
     const missing = issuerCount[0]?.n ?? 0;
     if (missing > 0) {
-      await client.$executeRawUnsafe(
+      await run(
         `UPDATE account SET issuer = CONCAT('local:', providerId) WHERE issuer IS NULL;`,
       );
       console.log(`account.issuer backfilled ${missing} row(s)`);
@@ -627,7 +662,7 @@ async function main() {
 
     // Make it NOT NULL if it isn't already.
     if (accountShape !== null && accountShape.columns.some((c) => c.name === "issuer" && c.nullable)) {
-      await client.$executeRawUnsafe(`ALTER TABLE \`account\` MODIFY \`issuer\` TEXT NOT NULL;`);
+      await run(modifyColumnSql("account", { name: "issuer", type: "TEXT", required: true }));
       console.log("account.issuer set to NOT NULL");
     } else {
       console.log("account.issuer already NOT NULL");
@@ -668,7 +703,7 @@ async function main() {
     SELECT COUNT(*) AS n FROM material_rate
   `;
   if ((rateCount[0]?.n ?? 0) === 0) {
-    await client.$executeRawUnsafe(`
+    await run(`
       INSERT INTO material_rate (material, dollarsPerKg, updatedAt) VALUES
         ('PLA', 20.0, CURRENT_TIMESTAMP),
         ('PETG', 22.0, CURRENT_TIMESTAMP),
@@ -685,7 +720,7 @@ async function main() {
     SELECT COUNT(*) AS n FROM machine_rate
   `;
   if ((machineCount[0]?.n ?? 0) === 0) {
-    await client.$executeRawUnsafe(`
+    await run(`
       INSERT INTO machine_rate (id, dollarsPerHour, updatedAt) VALUES
         ('default', 0.75, CURRENT_TIMESTAMP)
       ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP
@@ -704,6 +739,11 @@ async function main() {
   });
   if (admin === null) {
     console.log(`admin user ${DELETE_ADMIN_ID} not found — nothing to delete`);
+  } else if (DRY_RUN) {
+    console.log(
+      `[dry-run] would delete broken admin user ${DELETE_ADMIN_ID} ` +
+        `(${admin.email}, ${admin.name}, ${admin.role})`,
+    );
   } else {
     console.log(
       `deleting broken admin user ${DELETE_ADMIN_ID} (${admin.email}, ${admin.name}, ${admin.role}) —`,
@@ -720,7 +760,12 @@ async function main() {
       where: { role: "admin" },
       select: { id: true, email: true },
     });
-    if (existingAdmin === null) {
+    if (existingAdmin === null && DRY_RUN) {
+      console.log(
+        `[dry-run] would create an admin placeholder for ${ADMIN_EMAIL} — ` +
+          `run /setup to set the password once the deploy is real`,
+      );
+    } else if (existingAdmin === null) {
       // The setup action writes user + account together. Replicate just enough
       // of that shape here so sign-in works once the admin picks a password at
       // /setup — we do not invent a password here, so the account row is left
