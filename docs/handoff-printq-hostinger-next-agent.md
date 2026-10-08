@@ -1,6 +1,9 @@
 # Handoff: PrintQ / Hostinger deploy — the `TEXTNOT` build failure, resolved
 
-**Status: the fix is pushed and running on the host, and it has already repaired the live database.**
+**Status: the deployment builds, serves, and the first-run claim now produces an account that can sign
+in.** Four failures in the deploy path were fixed, then a fifth surfaced *after* the deployment was
+live: `/setup` wrote an admin nobody could sign in as (see *Fifth failure*). All five are fixed and the
+sign-in was verified against the real deployment.
 The reconciliation now reaches its final step; the remaining failure was in admin bootstrap (see
 *Third failure*), and the placeholder-admin step is now opt-in because it contradicted the documented
 first-run flow.
@@ -111,6 +114,48 @@ Two things came out of it:
    admin"; step 9 then blocked that. A deploy that ran it left a deployment nobody could sign in to and
    no way to claim it.
 
+## Fifth failure: `/setup` created an admin that could not sign in
+
+With the deployment live, the owner claimed `/setup` and got `WARN [Better Auth]: User not found` on the
+sign-in page. The row told the story:
+
+```
+id                        email                  username  displayUsername  role
+cmv0091o600017mpepwd9x09i dav.martinj@gmail.com  NULL      NULL             admin
+```
+
+and the credential account beside it held a perfectly valid 161-character digest. Sign-in is
+username-only (`authClient.signIn.username`, and the plugin looks the user up by the folded `username`
+column), so `NULL` meant no lookup could ever match — the password was never the problem.
+
+`completeSetup` parsed a username, validated it against `USERNAME_RULE`, and then wrote the user row
+without it. Every other path writes both columns: the invite action hands `username` to Better Auth's
+sign-up, `set-password` and `scripts/_accounts.ts` write `username.toLowerCase()` plus
+`displayUsername` by hand, and `src/lib/auth-rules.ts` documents the rule. `/setup` — the one path a
+fresh deployment uses — was the exception. The fix writes both, at the top of `completeSetup`, with the
+reason in a comment. **There was no test covering this path**: `verify-auth.ts` section 14 asserts the
+folding for the *set-password link* route and nothing drives `/setup` itself, which is how a
+three-field write shipped with two fields.
+
+Verified against the live deployment after the rebuild: a throwaway claim with the mixed-case username
+`DeployCheck` stored `username = "deploycheck"` and `displayUsername = "DeployCheck"`, signed in with
+the lower-cased username, landed on `/queue` with the admin navigation, and left an `auth.signed_in`
+row. The throwaway was then deleted, leaving the deployment claimable.
+
+### The transient that was not a bug
+
+The app log also showed, one attempt earlier:
+
+```
+failed to get redirect response TypeError: fetch failed
+    at node:internal/deps/undici/undici:13510:13
+```
+
+That is the HIBP k-anonymity call inside `completeSetup` failing to reach
+`api.pwnedpasswords.com`. The breach check fails closed *by design*, so the attempt was refused with the
+message that says so, and the retry a moment later succeeded. Not a code defect — but worth knowing
+that a network blip on this host looks like a failed registration.
+
 ## What changed in this workspace
 
 | File | Change |
@@ -175,6 +220,24 @@ reach `prisma generate && next build`.
 3. **Consider dropping the junk `VARCHAR(191)` column** in `notification` after the deploy is green.
 4. **`SKIP_DB_RECONCILE=true`** in the app's environment panel takes the build past the DB step
    entirely, if it should not run on the host at all.
+
+## Configuration landmine: `TRUST_PROXY_HEADERS` holds the placeholder text
+
+The app's environment on the host contains, verbatim:
+
+```
+TRUST_PROXY_HEADERS='<false|true|cloudflare>'
+```
+
+The value was copied out of the env block in `docs/hostinger-deployment.md`, which spells the
+placeholder with the alternatives inline. `ipSource()` in `src/lib/client-ip.ts` recognises only
+`false`, `true` and `cloudflare`, so anything else means "trust nothing" — and every `auditEvent.ip` row
+on the live deployment is `NULL`, with Better Auth warning that rate limiting is falling back to "a
+single shared per-path bucket". Consequences: no client address in the audit trail, and one rate-limit
+budget for the whole office instead of one per address. Leave it `false` to keep that (it is the safe
+half), or set `true`/`cloudflare` only on the conditions `docs/deployment.md#why-trust_proxy_headers-is-a-separate-switch`
+spells out — `true` trusts the left-most `X-Forwarded-For`, which is forgeable unless the proxy in front
+replaces the header rather than appending to it.
 
 ## Second landmine on this path: `prisma migrate deploy` cannot work on Hostinger MySQL
 
