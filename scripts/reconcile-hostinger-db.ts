@@ -626,7 +626,8 @@ async function main() {
     }
 
     // Make it NOT NULL if it isn't already.
-    if (accountShape !== null && accountShape.columns.some((c) => c.name === "issuer" && c.nullable)) {await client.$executeRawUnsafe(`ALTER TABLE \`account\` MODIFY \`issuer\` TEXT NOT NULL;`);
+    if (accountShape !== null && accountShape.columns.some((c) => c.name === "issuer" && c.nullable)) {
+      await client.$executeRawUnsafe(`ALTER TABLE \`account\` MODIFY \`issuer\` TEXT NOT NULL;`);
       console.log("account.issuer set to NOT NULL");
     } else {
       console.log("account.issuer already NOT NULL");
