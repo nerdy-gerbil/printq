@@ -20,7 +20,10 @@
  *  7. Seeds material_rate and machine_rate defaults if those tables were empty.
  *  8. Deletes user id cmuznegkk00017mcwlf6pas66 and lets the foreign-key
  *     cascades clean up the linked account/session/passkey rows.
- *  9. Recreates a placeholder admin when RECREATE_ADMIN is not explicitly false.
+ *  9. Leaves the first admin to /setup. A placeholder admin is created only when
+ *     RECREATE_ADMIN=true, because /setup offers itself only while no admin
+ *     exists (src/app/setup/actions.ts) and a placeholder has no password to
+ *     sign in with — creating one blocks the documented first-run claim.
  *
  * The script is intentionally READ-ONLY in the inspection phase and only writes
  * after dumping the full plan. It never echoes the database password.
@@ -93,6 +96,7 @@ import {
   indexPresent,
   type IndexShape,
 } from "./lib/schema-shape";
+import { createAdminPlaceholder, initialsFor } from "./lib/admin-bootstrap";
 
 const client = new PrismaClient({
   log: ["warn", "error"],
@@ -168,7 +172,13 @@ const DELETE_ADMIN_ID = "cmuznegkk00017mcwlf6pas66";
 
 const ADMIN_USER = process.env.ADMIN_USER?.trim() ?? "GeekyGerbil";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.trim().toLowerCase() ?? "dav.martinj@gmail.com";
-const RECREATE_ADMIN = process.env.RECREATE_ADMIN !== "false";
+// Opt-in, and off by default. `needsSetup()` in src/app/setup/actions.ts is
+// `count(role = admin) === 0`, so a placeholder admin makes /setup answer
+// "already set up. Sign in instead." — while having no credential digest to
+// sign in with, and the seed deliberately prints no set-password link either.
+// The row the code below writes is therefore only useful if something else is
+// going to give it a password; set RECREATE_ADMIN=true when that is the case.
+const RECREATE_ADMIN = process.env.RECREATE_ADMIN === "true";
 
 type ColumnShape = {
   name: string;
@@ -772,32 +782,27 @@ async function main() {
       // /setup — we do not invent a password here, so the account row is left
       // without a credential digest until /setup runs. Better Auth will still
       // accept a sign-in once /setup has populated the credential account.
-      const userId: string = await client.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: {
-            name: ADMIN_USER,
-            email: ADMIN_EMAIL,
-            emailVerified: true,
-            initials: ADMIN_USER
-              .toUpperCase()
-              .slice(0, 2)
-              .replace(/[^A-Z]/g, "?"),
-            role: "admin",
-            invitedById: null,
-          },
-          select: { id: true },
-        });
-        await tx.account.create({
-          data: {
-            accountId: userId,
-            issuer: "local:credential",
-            providerId: "credential",
-            userId,
-            password: null,
-          },
-        });
-        return userId;
-      });
+      //
+      // ./lib/admin-bootstrap holds the sequence: the account row takes its id
+      // from the user row just created. It used to read `accountId: userId`
+      // from inside the callback that defines userId, which threw a
+      // ReferenceError after the broken admin had already been deleted.
+      const userId: string = await client.$transaction(async (tx) =>
+        createAdminPlaceholder(
+          { name: ADMIN_USER, email: ADMIN_EMAIL, initials: initialsFor(ADMIN_USER) },
+          (data) => tx.user.create({ data, select: { id: true } }),
+          (accountId) =>
+            tx.account.create({
+              data: {
+                accountId,
+                issuer: "local:credential",
+                providerId: "credential",
+                userId: accountId,
+                password: null,
+              },
+            }),
+        ),
+      );
       console.log(
         `admin placeholder created: ${userId} (${ADMIN_EMAIL}) — run /setup to ` +
           `set the password and finalise the credential account`,
@@ -809,7 +814,9 @@ async function main() {
       );
     }
   } else {
-    console.log("RECREATE_ADMIN=false — skipping admin creation");
+    console.log(
+      "RECREATE_ADMIN is not true — leaving the first admin to /setup",
+    );
   }
 
   await client.$disconnect();

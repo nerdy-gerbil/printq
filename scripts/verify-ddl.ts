@@ -32,9 +32,10 @@ import {
   indexPresent,
   type StatisticRow,
 } from "./lib/schema-shape";
+import { createAdminPlaceholder, initialsFor } from "./lib/admin-bootstrap";
 
 /** null = pass, otherwise why it failed. */
-type Case = { name: string; check: () => string | null };
+type Case = { name: string; check: () => string | null | Promise<string | null> };
 
 const CASES: Case[] = [
   {
@@ -272,6 +273,64 @@ const CASES: Case[] = [
         : `name came back as ${String(indexes[0]?.name)}`;
     },
   },
+  // ---------------------------------------------------------------------------
+  // The admin placeholder. The third failure on this host: `accountId: userId`
+  // inside the transaction callback that defines userId, a temporal dead zone
+  // that threw after the broken admin had already been deleted.
+  // ---------------------------------------------------------------------------
+  {
+    name: "the admin placeholder keys its account row by the id it just created",
+    check: async () => {
+      const calls: string[] = [];
+      const id = await createAdminPlaceholder(
+        { name: "GeekyGerbil", email: "admin@example.org", initials: initialsFor("GeekyGerbil") },
+        async (data) => {
+          calls.push(`user(${data.role},${data.email},${data.initials},${String(data.invitedById)})`);
+          return { id: "usr_created_1" };
+        },
+        async (accountId) => {
+          calls.push(`account(${accountId})`);
+        },
+      );
+      if (id !== "usr_created_1") return `returned ${id}`;
+      const want = "user(admin,admin@example.org,GE,null) account(usr_created_1)";
+      return calls.join(" ") === want ? null : `calls=${calls.join(" ")}`;
+    },
+  },
+  {
+    name: "the admin placeholder's account id tracks the row, not a fixed value",
+    check: async () => {
+      // Same call, a different id out of createUser: if the account row were
+      // keyed by anything other than what createUser returned, this fails.
+      const seen: string[] = [];
+      const id = await createAdminPlaceholder(
+        { name: "N", email: "n@example.org", initials: "N?" },
+        async () => ({ id: "usr_second_9" }),
+        async (accountId) => {
+          seen.push(accountId);
+        },
+      );
+      if (id !== "usr_second_9") return `returned ${id}`;
+      return seen.join(",") === "usr_second_9" ? null : `account got ${seen.join(",")}`;
+    },
+  },
+  {
+    name: "initials keep the shape the existing rows were written with",
+    check: () => {
+      const cases: Array<[string, string]> = [
+        ["GeekyGerbil", "GE"],
+        ["Geeky Gerbil", "GE"],
+        ["a", "A"],
+        ["Émile", "?M"],
+        ["  ", "??"],
+      ];
+      for (const [input, want] of cases) {
+        const got = initialsFor(input);
+        if (got !== want) return `initialsFor(${input}) = ${got}, expected ${want}`;
+      }
+      return null;
+    },
+  },
   {
     // The regression pin on the real file, not on a copy of the pattern: the
     // bug was in the reconciliation script's own template strings.
@@ -295,7 +354,7 @@ let failed = 0;
 for (const testCase of CASES) {
   let reason: string | null;
   try {
-    reason = testCase.check();
+    reason = await testCase.check();
   } catch (error) {
     reason = `threw: ${(error as Error).message}`;
   }

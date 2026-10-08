@@ -1,6 +1,9 @@
 # Handoff: PrintQ / Hostinger deploy — the `TEXTNOT` build failure, resolved
 
 **Status: the fix is pushed and running on the host, and it has already repaired the live database.**
+The reconciliation now reaches its final step; the remaining failure was in admin bootstrap (see
+*Third failure*), and the placeholder-admin step is now opt-in because it contradicted the documented
+first-run flow.
 The first deploy after it got past the failure it was written for — `ALTER TABLE notification ADD
 COLUMN text TEXT NOT NULL;` ran, and `column notification.text: added` is in the build log — and then
 hit a *second* bug one step later, in index detection, which is fixed in the following commit (see
@@ -79,10 +82,40 @@ an index someone else created is theirs to review — nothing is dropped or alte
 The `STATISTICS` query also gained `ORDER BY INDEX_NAME, SEQ_IN_INDEX`, so a composite index's columns
 come back in the index's own order rather than whatever the server felt like.
 
+## Third failure: admin bootstrap, and a step that contradicted `/setup`
+
+With the schema reconciled, the next build walked the whole script and died at its last step:
+
+```
+deleting broken admin user cmuznegkk00017mcwlf6pas66 (dav.martinj@gmail.com, David Martín, admin) —
+admin user deleted — cascades should have cleaned account/session/passkey
+ReferenceError: Cannot access 'userId' before initialization
+    at <anonymous> (.../scripts/reconcile-hostinger-db.ts:792:24)
+    at async Proxy._transactionWithCallback (.../node_modules/@prisma/client/...)
+```
+
+The account row was built with `accountId: userId` **inside the transaction callback that defines
+`userId`** — a temporal dead zone, so the transaction threw. Because step 8 had already committed the
+delete, the database was left with **no admin at all**.
+
+Two things came out of it:
+
+1. The sequence now lives in `scripts/lib/admin-bootstrap.ts`, taking the id from the row it just
+   created, with the two writes injected so `verify-ddl.ts` drives them and asserts the account is keyed
+   by the new user's id. The bug was unreachable by any test while it was inline in a callback.
+2. **The placeholder admin is now opt-in** (`RECREATE_ADMIN=true`). It was on by default, which fought
+   the rest of the system: `needsSetup()` is `count(role = 'admin') === 0`, so a placeholder makes
+   `/setup` answer *"already set up. Sign in instead."* — and the placeholder has no password digest,
+   while `prisma/seed.ts` deliberately prints no set-password link ("the set-password link the seed used
+   to print was one more moving part"). Step 8 deletes the broken admin "so /setup can create a clean
+   admin"; step 9 then blocked that. A deploy that ran it left a deployment nobody could sign in to and
+   no way to claim it.
+
 ## What changed in this workspace
 
 | File | Change |
 | --- | --- |
+| `scripts/lib/admin-bootstrap.ts` | **New.** The admin placeholder sequence, id taken from the created row, both writes injectable so the ordering bug above cannot come back untested. |
 | `scripts/lib/schema-shape.ts` | **New.** Reading the live schema back out of `INFORMATION_SCHEMA`: the `NON_UNIQUE` coercion and the index-shape helpers, pure so they can be pinned without a database. |
 | `scripts/lib/ddl.ts` | **New.** Every statement is assembled here, each clause joined with exactly one space. `assertNoGluedKeyword` throws on the glued shape (`TEXTNOT`, `INTEGERDEFAULT`, `${a}${b}`) so a future edit cannot reintroduce it. Pure — no database, no credentials. |
 | `scripts/reconcile-hostinger-db.ts` | Uses those builders for `CREATE TABLE` / `ADD COLUMN` / `MODIFY` / `CREATE INDEX`; prints every statement before it runs (DDL only — no rows, no credentials), so a build log now names its own failure; `SKIP_DB_RECONCILE=true` actually skips the step (the script's error text had been promising it with nothing behind it); `DRY_RUN=true` or `--dry-run` runs the whole inspection and prints the whole plan without writing anything. |
@@ -128,6 +161,10 @@ reach `prisma generate && next build`.
 1. **Watch the next build.** Everything the reconciliation asks for is now either present or fixed;
    if it succeeds, the remaining risk moves to `next build` itself (which has never run on this host
    against a MySQL schema — `prisma generate` and the Next.js compile are next in line).
+2. **The first admin is claimed at `/setup`.** The database currently holds **no admin**: the failed
+   build deleted the broken one and never replaced it. That is the good state — `/setup` is claimable
+   on the live site right now, and the reconciliation no longer creates anything that would block it.
+   If a placeholder is ever wanted, `RECREATE_ADMIN=true` in the app's environment panel.
 2. **Not verified: the fixed script executed end-to-end against the live database.** Prisma's query
    engine cannot start from an interactive SSH session on this host — `$queryRaw` triggers a Rust
    panic, `PANIC: timer has gone away`, on the very first query, with the engine loading fine. The
