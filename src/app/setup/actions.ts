@@ -89,8 +89,9 @@ export async function completeSetup(
   // password. K-anonymity — five characters of a SHA-1 prefix leave the box.
   const sha1 = (await import("node:crypto")).createHash("sha1");
   sha1.update(parsed.data.password);
-  const prefix = sha1.digest("hex").toUpperCase().slice(0, 5);
-  const suffix = sha1.digest("hex").toUpperCase().slice(5);
+  const hex = sha1.digest("hex").toUpperCase();
+  const prefix = hex.slice(0, 5);
+  const suffix = hex.slice(5);
   try {
     const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
       signal: AbortSignal.timeout(10_000),
